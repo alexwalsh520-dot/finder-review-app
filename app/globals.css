@@ -1,0 +1,206 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  color-scheme: dark;
+  --bg: #0c0c10;
+  --sidebar: #101014;
+  --card: #161619;
+  --card-hover: #1c1c20;
+  --border: rgba(255, 255, 255, 0.07);
+  --border-hover: rgba(255, 255, 255, 0.12);
+  --text-primary: rgba(255, 255, 255, 0.88);
+  --text-secondary: rgba(255, 255, 255, 0.55);
+  --text-tertiary: rgba(255, 255, 255, 0.32);
+  --gold: #c9a96e;
+  --gold-text: #d4b87d;
+  --gold-bg: rgba(201, 169, 110, 0.08);
+  --gold-border: rgba(201, 169, 110, 0.18);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  @apply transition-colors;
+}
+
+a:hover {
+  color: white;
+}
+
+button:disabled {
+  @apply cursor-not-allowed opacity-60;
+}
+
+input,
+select,
+textarea {
+  background: #101014;
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-size: 13px;
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: rgba(201, 169, 110, 0.25);
+  box-shadow: 0 0 0 2px rgba(201, 169, 110, 0.12);
+}
+
+table {
+  @apply w-full border-collapse;
+}
+
+th,
+td {
+  @apply align-top;
+}
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.14); }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition: all 0.2s ease;
+}
+
+.card:hover {
+  background: var(--card-hover);
+  border-color: var(--border-hover);
+}
+
+.card-gold {
+  background: var(--card);
+  border: 1px solid var(--gold-border);
+  border-radius: 12px;
+  box-shadow: 0 0 24px rgba(201, 169, 110, 0.06);
+}
+
+.text-ink { color: var(--text-primary) !important; }
+.text-slateWarm { color: var(--text-secondary) !important; }
+.text-ember { color: var(--gold-text) !important; }
+
+.bg-white,
+.bg-white\/90 {
+  background: var(--card) !important;
+}
+
+.bg-stone-50 {
+  background: var(--sidebar) !important;
+}
+
+.border-stone-200,
+.border-stone-300 {
+  border-color: var(--border) !important;
+}
+
+.shadow-panel {
+  box-shadow: none !important;
+}
+
+@layer components {
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 1.5rem;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.01), 0 18px 42px rgba(0, 0, 0, 0.28);
+  }
+
+  .panel-muted {
+    background: var(--sidebar);
+    border: 1px solid var(--border);
+    border-radius: 1.1rem;
+  }
+
+  .section-label {
+    color: var(--text-tertiary);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+  }
+
+  .gold-button {
+    background: linear-gradient(180deg, #d2b27b 0%, #b89252 100%);
+    color: #111216;
+    border-radius: 0.9rem;
+    font-weight: 700;
+    transition: transform 0.15s ease, filter 0.15s ease;
+  }
+
+  .gold-button:hover {
+    filter: brightness(1.05);
+    transform: translateY(-1px);
+  }
+
+  .ghost-button {
+    background: transparent;
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 0.9rem;
+    font-weight: 600;
+    transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+  }
+
+  .ghost-button:hover {
+    border-color: var(--gold-border);
+    background: rgba(201, 169, 110, 0.06);
+    color: white;
+  }
+
+  .warning-button {
+    background: rgba(201, 169, 110, 0.08);
+    color: var(--gold-text);
+    border: 1px solid var(--gold-border);
+    border-radius: 0.9rem;
+    font-weight: 600;
+  }
+
+  .warning-button:hover {
+    background: rgba(201, 169, 110, 0.13);
+  }
+
+  .danger-button {
+    background: rgba(244, 63, 94, 0.08);
+    color: rgba(253, 164, 175, 0.95);
+    border: 1px solid rgba(244, 63, 94, 0.2);
+    border-radius: 0.9rem;
+    font-weight: 600;
+  }
+
+  .danger-button:hover {
+    background: rgba(244, 63, 94, 0.14);
+  }
+
+  .table-shell {
+    overflow: hidden;
+    border-radius: 1.5rem;
+    border: 1px solid var(--border);
+    background: var(--card);
+  }
+
+  .table-head {
+    background: rgba(255, 255, 255, 0.02);
+    color: var(--text-tertiary);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+  }
+}
