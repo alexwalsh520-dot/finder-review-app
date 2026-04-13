@@ -15,24 +15,15 @@ export default async function OwnerQueuePage() {
         </div>
         <p className="text-sm text-slateWarm">{leads.length} leads waiting</p>
       </div>
-      <div className="table-shell overflow-x-auto">
-        <table>
-          <thead className="table-head text-left">
-            <tr>
-              <th className="px-4 py-3">Lead</th>
-              <th className="px-4 py-3">First name</th>
-              <th className="px-4 py-3">Email</th>
-              <th className="px-4 py-3">Notes</th>
-              <th className="px-4 py-3">Bio</th>
-              <th className="px-4 py-3">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {leads.map((lead) => (
-              <ReviewActionRow key={lead.id} lead={lead} mode="owner" />
-            ))}
-          </tbody>
-        </table>
+      <div className="space-y-4">
+        {leads.map((lead) => (
+          <ReviewActionRow key={lead.id} lead={lead} mode="owner" />
+        ))}
+        {!leads.length ? (
+          <div className="panel p-6">
+            <p className="text-sm text-slateWarm">No leads are waiting in the owner queue right now.</p>
+          </div>
+        ) : null}
       </div>
     </div>
   )
