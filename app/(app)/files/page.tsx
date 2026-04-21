@@ -1,7 +1,9 @@
+import { requireSession } from "@/lib/auth"
 import { getFilesAndStatus } from "@/lib/data"
 import { fileLabel, formatDateTime } from "@/lib/format"
 
 export default async function FilesPage() {
+  await requireSession(["owner"])
   const data = await getFilesAndStatus()
 
   return (

@@ -1,5 +1,6 @@
 import Link from "next/link"
 
+import { requireSession } from "@/lib/auth"
 import { getDashboardData } from "@/lib/data"
 import { formatDateTime } from "@/lib/format"
 
@@ -13,6 +14,7 @@ const cards = [
 ] as const
 
 export default async function DashboardPage() {
+  await requireSession()
   const data = await getDashboardData()
 
   return (
