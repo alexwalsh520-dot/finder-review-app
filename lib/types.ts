@@ -35,6 +35,20 @@ export type LeadRow = {
   created_at: string
 }
 
+export type PaginatedResult<T> = {
+  items: T[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+  hasNext: boolean
+  hasPrevious: boolean
+  startIndex: number
+  endIndex: number
+}
+
+export type ReviewQueueResult = PaginatedResult<LeadRow>
+
 export type SessionPayload = {
   email: string
   role: AppRole
