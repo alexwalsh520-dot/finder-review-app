@@ -13,6 +13,7 @@ export async function GET(request: Request) {
       batchDate: searchParams.get("batchDate") || "",
       emailType: searchParams.get("emailType") || "",
       source: searchParams.get("source") || "",
+      page: searchParams.get("page") || "1",
     })
     return NextResponse.json(data)
   } catch (error) {

@@ -42,7 +42,7 @@ export function SettingsToggle({ initialValue }: { initialValue: boolean }) {
         <div>
           <p className="font-medium text-ink">Require owner approval</p>
           <p className="mt-1 text-sm text-slateWarm">
-            When on, VA approval only moves leads into your queue. When off, VA approval makes them export-ready.
+            When on, every VA decision still goes through Alex. When off, VA-marked Qualified leads go straight to Ready for Smartlead, while Not qualified leads still go to Alex.
           </p>
         </div>
         <input type="checkbox" checked={value} onChange={(event) => updateValue(event.target.checked)} disabled={pending} />

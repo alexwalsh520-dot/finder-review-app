@@ -14,7 +14,12 @@ export async function POST(request: Request, { params }: { params: { leadId: str
     await applyReviewAction(params.leadId, session, {
       action: body.action,
       firstName: body.firstName,
+      email: body.email,
       note: body.note,
+      checklist: body.checklist,
+      emailType: body.emailType,
+      gender: body.gender,
+      hasCoaching: body.hasCoaching,
     })
     return NextResponse.json({ ok: true })
   } catch (error) {

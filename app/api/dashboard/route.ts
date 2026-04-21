@@ -4,6 +4,8 @@ import { requireApiSession } from "@/lib/auth"
 import { getDashboardData } from "@/lib/data"
 import { jsonError } from "@/lib/http"
 
+export const dynamic = "force-dynamic"
+
 export async function GET() {
   try {
     await requireApiSession()
