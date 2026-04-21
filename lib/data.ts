@@ -1077,7 +1077,7 @@ export async function getReviewerHistory(reviewerEmail: string, filters: ReviewF
       .select("lead_id,created_at")
       .eq("actor_role", "reviewer")
       .eq("actor_identifier", reviewerEmail)
-      .in("action", ["qualified", "not_qualified"])
+      .in("action", ["qualified", "not_qualified", "save"])
       .order("created_at", { ascending: false })
       .range(rangeFrom, rangeTo)
   )
