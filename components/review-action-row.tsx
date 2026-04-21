@@ -2,7 +2,7 @@
 
 import { ChevronDown, CircleHelp, ExternalLink } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { startTransition, useMemo, useState } from "react"
+import { startTransition, useEffect, useMemo, useState } from "react"
 
 import { compactNumber, createInstagramUrl, formatDateTime, formatDayLabel } from "@/lib/format"
 import type { ChecklistResult, LeadChecklist, LeadGender, LeadRow } from "@/lib/types"
@@ -155,26 +155,48 @@ function checklistSummary(checklist: LeadChecklist) {
   }))
 }
 
+type SavedFields = {
+  firstName: string
+  email: string
+  emailType: "personal" | "management" | null
+  gender: LeadGender | null
+  hasCoaching: boolean | null
+  note: string
+}
+
+function buildSavedFields(lead: LeadRow, mode: Mode): SavedFields {
+  return {
+    firstName: initialFirstName(lead),
+    email: initialEmail(lead).toLowerCase(),
+    emailType: initialEmailType(lead),
+    gender: initialGender(lead),
+    hasCoaching: initialHasCoaching(lead),
+    note: (mode === "owner" ? lead.review_snapshot?.owner_note || "" : lead.review_snapshot?.va_note || lead.review_notes || "").trim(),
+  }
+}
+
+function resolveSavedFirstName(lead: LeadRow, value: string): string {
+  const trimmed = value.trim()
+  if (trimmed) {
+    return trimmed
+  }
+  return initialFirstName(lead)
+}
+
+function resolveSavedEmail(value: string): string {
+  return value.trim().toLowerCase()
+}
+
 export function ReviewActionRow({ lead, mode }: Props) {
   const router = useRouter()
-  const originalFirstName = initialFirstName(lead)
-  const originalEmail = initialEmail(lead)
-  const originalEmailType = initialEmailType(lead)
-  const originalGender = initialGender(lead)
-  const originalHasCoaching = initialHasCoaching(lead)
-  const originalNote =
-    mode === "owner"
-      ? lead.review_snapshot?.owner_note || ""
-      : lead.review_snapshot?.va_note || lead.review_notes || ""
-  const originalChecklist = lead.review_snapshot?.checklist || emptyChecklist()
-
-  const [firstName, setFirstName] = useState(originalFirstName)
-  const [email, setEmail] = useState(originalEmail)
-  const [emailType, setEmailType] = useState<"personal" | "management" | null>(originalEmailType)
-  const [gender, setGender] = useState<LeadGender | null>(originalGender)
-  const [hasCoaching, setHasCoaching] = useState<boolean | null>(originalHasCoaching)
-  const [note, setNote] = useState(originalNote)
-  const [checklist, setChecklist] = useState<LeadChecklist>(originalChecklist)
+  const [savedFields, setSavedFields] = useState<SavedFields>(() => buildSavedFields(lead, mode))
+  const [firstName, setFirstName] = useState(savedFields.firstName)
+  const [email, setEmail] = useState(savedFields.email)
+  const [emailType, setEmailType] = useState<"personal" | "management" | null>(savedFields.emailType)
+  const [gender, setGender] = useState<LeadGender | null>(savedFields.gender)
+  const [hasCoaching, setHasCoaching] = useState<boolean | null>(savedFields.hasCoaching)
+  const [note, setNote] = useState(savedFields.note)
+  const [checklist, setChecklist] = useState<LeadChecklist>(lead.review_snapshot?.checklist || emptyChecklist())
   const [status, setStatus] = useState("")
   const [pending, setPending] = useState(false)
   const [showNameActions, setShowNameActions] = useState(false)
@@ -186,12 +208,25 @@ export function ReviewActionRow({ lead, mode }: Props) {
   const [showChecklistHelp, setShowChecklistHelp] = useState(false)
   const [expanded, setExpanded] = useState(false)
 
-  const nameDirty = firstName.trim() !== originalFirstName
-  const emailDirty = email.trim() !== originalEmail
-  const emailTypeDirty = emailType !== originalEmailType
-  const genderDirty = gender !== originalGender
-  const coachingDirty = hasCoaching !== originalHasCoaching
-  const noteDirty = note !== originalNote
+  useEffect(() => {
+    const nextSavedFields = buildSavedFields(lead, mode)
+    setSavedFields(nextSavedFields)
+    setFirstName(nextSavedFields.firstName)
+    setEmail(nextSavedFields.email)
+    setEmailType(nextSavedFields.emailType)
+    setGender(nextSavedFields.gender)
+    setHasCoaching(nextSavedFields.hasCoaching)
+    setNote(nextSavedFields.note)
+    setChecklist(lead.review_snapshot?.checklist || emptyChecklist())
+    setPending(false)
+  }, [lead, mode])
+
+  const nameDirty = firstName.trim() !== savedFields.firstName
+  const emailDirty = resolveSavedEmail(email) !== savedFields.email
+  const emailTypeDirty = emailType !== savedFields.emailType
+  const genderDirty = gender !== savedFields.gender
+  const coachingDirty = hasCoaching !== savedFields.hasCoaching
+  const noteDirty = note.trim() !== savedFields.note
   const checklistAllPass = checklist.authority === "pass" && checklist.personality === "pass" && checklist.engagement === "pass"
   const ownerCanApprove = lead.review_status !== "approved" && lead.review_status !== "exported_pending_confirmation" && !lead.sent_to_smartlead
   const ownerCanReject = lead.review_status !== "rejected" && !lead.sent_to_smartlead
@@ -227,15 +262,34 @@ export function ReviewActionRow({ lead, mode }: Props) {
       if (!response.ok) {
         throw new Error(payload.error || "Action failed.")
       }
-      setStatus(action === "save" ? "Saved" : "Decision saved.")
+      if (action === "save") {
+        const nextSavedFields: SavedFields = {
+          firstName: resolveSavedFirstName(lead, firstName),
+          email: resolveSavedEmail(email),
+          emailType,
+          gender,
+          hasCoaching,
+          note: note.trim(),
+        }
+        setSavedFields(nextSavedFields)
+        setFirstName(nextSavedFields.firstName)
+        setEmail(nextSavedFields.email)
+        setNote(nextSavedFields.note)
+        setStatus("Saved. This lead stays in Review Queue until you mark Qualified or Not qualified.")
+      } else {
+        setStatus("Decision saved.")
+      }
       setShowNameActions(false)
+      setShowEmailActions(false)
       setShowEmailTypeActions(false)
       setShowGenderActions(false)
       setShowCoachingActions(false)
       setShowNoteActions(false)
-      startTransition(() => {
-        router.refresh()
-      })
+      if (action !== "save") {
+        startTransition(() => {
+          router.refresh()
+        })
+      }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Action failed.")
     } finally {
@@ -244,37 +298,37 @@ export function ReviewActionRow({ lead, mode }: Props) {
   }
 
   function cancelNameEdit() {
-    setFirstName(originalFirstName)
+    setFirstName(savedFields.firstName)
     setShowNameActions(false)
     setStatus("")
   }
 
   function cancelEmailEdit() {
-    setEmail(originalEmail)
+    setEmail(savedFields.email)
     setShowEmailActions(false)
     setStatus("")
   }
 
   function cancelNoteEdit() {
-    setNote(originalNote)
+    setNote(savedFields.note)
     setShowNoteActions(false)
     setStatus("")
   }
 
   function cancelEmailTypeEdit() {
-    setEmailType(originalEmailType)
+    setEmailType(savedFields.emailType)
     setShowEmailTypeActions(false)
     setStatus("")
   }
 
   function cancelGenderEdit() {
-    setGender(originalGender)
+    setGender(savedFields.gender)
     setShowGenderActions(false)
     setStatus("")
   }
 
   function cancelCoachingEdit() {
-    setHasCoaching(originalHasCoaching)
+    setHasCoaching(savedFields.hasCoaching)
     setShowCoachingActions(false)
     setStatus("")
   }
