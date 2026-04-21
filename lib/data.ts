@@ -51,6 +51,7 @@ const LEAD_SELECT = [
 const BUCKET_NAME = getOptionalEnv("FINDER_OUTPUT_BUCKET") || "finder-outputs"
 const PAGE_SIZE = 50
 const REMOTE_FETCH_BATCH_SIZE = 500
+const LEAD_ID_FETCH_BATCH_SIZE = 200
 const REVIEW_QUEUE_PAGE_SIZE = 10
 const DAILY_EMAIL_TARGET = 150
 const DAILY_QUALIFIED_TARGET = 100
@@ -352,6 +353,49 @@ async function fetchReviewSnapshots(leadIds: string[]): Promise<Map<string, Lead
   }
 
   return snapshotMap
+}
+
+async function fetchLeadsByIds(
+  leadIds: string[],
+  options: {
+    includeSent?: boolean
+    q?: string
+  } = {},
+): Promise<LeadRow[]> {
+  if (!leadIds.length) {
+    return []
+  }
+
+  const supabase = createAdminClient()
+  const rows: LeadRow[] = []
+  const searchQuery = options.q?.trim()
+  const safeSearch = searchQuery ? searchQuery.replace(/,/g, " ") : null
+
+  for (let index = 0; index < leadIds.length; index += LEAD_ID_FETCH_BATCH_SIZE) {
+    const batchIds = leadIds.slice(index, index + LEAD_ID_FETCH_BATCH_SIZE)
+    let query = applyHasEmailFilters(
+      supabase
+        .from("leads")
+        .select(LEAD_SELECT)
+        .in("id", batchIds)
+    ).in("status", ["email_ready", "mgmt_email"])
+
+    if (!options.includeSent) {
+      query = query.neq("sent_to_smartlead", true)
+    }
+
+    if (safeSearch) {
+      query = query.or(`instagram_handle.ilike.%${safeSearch}%,full_name.ilike.%${safeSearch}%,email.ilike.%${safeSearch}%`)
+    }
+
+    const { data, error } = await query.order("created_at", { ascending: false })
+    if (error) {
+      throw new Error(error.message)
+    }
+    rows.push(...castRows<LeadRow>(data))
+  }
+
+  return rows
 }
 
 function buildPaginatedResult<T>(items: T[], total: number, page: number): PaginatedResult<T> {
@@ -1096,28 +1140,31 @@ export async function getReviewerHistory(reviewerEmail: string, filters: ReviewF
     return buildPaginatedResult([], 0, page)
   }
 
-  const pageLeadIds = orderedLeadIds.slice(from, to + 1)
-  const { data, error } = await applyHasEmailFilters(
-    supabase
-      .from("leads")
-      .select(LEAD_SELECT)
-      .in("id", pageLeadIds)
-      .neq("sent_to_smartlead", true)
-  )
-    .in("status", ["email_ready", "mgmt_email"])
-    .order("created_at", { ascending: false })
-
-  if (error) {
-    throw new Error(error.message)
+  let filteredLeadIds = orderedLeadIds
+  if (filters.q?.trim()) {
+    const filteredRows = await fetchLeadsByIds(orderedLeadIds, {
+      includeSent: true,
+      q: filters.q,
+    })
+    const matchingLeadIds = new Set(filteredRows.map((lead) => lead.id))
+    filteredLeadIds = orderedLeadIds.filter((leadId) => matchingLeadIds.has(leadId))
   }
 
-  const leadMap = new Map(castRows<LeadRow>(data).map((lead) => [lead.id, lead]))
+  if (!filteredLeadIds.length) {
+    return buildPaginatedResult([], 0, page)
+  }
+
+  const pageLeadIds = filteredLeadIds.slice(from, to + 1)
+  const pageRows = await fetchLeadsByIds(pageLeadIds, {
+    includeSent: true,
+  })
+  const leadMap = new Map(pageRows.map((lead) => [lead.id, lead]))
   const orderedLeads = pageLeadIds
     .map((leadId) => leadMap.get(leadId))
     .filter((lead): lead is LeadRow => Boolean(lead))
   const snapshots = await fetchReviewSnapshots(orderedLeads.map((lead) => lead.id))
   const items = applyReviewSnapshots(orderedLeads, snapshots)
-  return buildPaginatedResult(items, orderedLeadIds.length, page)
+  return buildPaginatedResult(items, filteredLeadIds.length, page)
 }
 
 export async function getOwnerQueue(pageInput?: string | number): Promise<LeadListResult> {
