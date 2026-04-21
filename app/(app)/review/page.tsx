@@ -43,7 +43,7 @@ export default async function ReviewQueuePage({ searchParams }: { searchParams: 
           <h2 className="mt-2 text-3xl font-semibold text-ink">Unreviewed emailed leads</h2>
         </div>
         <p className="text-sm text-slateWarm">
-          {queue.total ? `Showing ${queue.startIndex}-${queue.endIndex} of ${queue.total}` : "0 leads shown"}
+          {queue.total ? `Showing ${queue.startIndex}-${queue.endIndex}` : "0 leads shown"}
         </p>
       </div>
 
@@ -63,11 +63,9 @@ export default async function ReviewQueuePage({ searchParams }: { searchParams: 
         </div>
       </form>
 
-      {queue.totalPages > 1 ? (
+      {queue.hasPrevious || queue.hasNext ? (
         <div className="panel-muted flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <p className="text-sm text-slateWarm">
-            Page {queue.page} of {queue.totalPages}
-          </p>
+          <p className="text-sm text-slateWarm">Page {queue.page}</p>
           <div className="flex items-center gap-2">
             <Link
               href={buildHref(searchParams, queue.page - 1)}

@@ -252,16 +252,32 @@ export async function getReviewQueue(filters: ReviewFilters): Promise<ReviewQueu
   const page = normalizePage(filters.page)
   const from = (page - 1) * PAGE_SIZE
   const to = from + PAGE_SIZE - 1
-  let query = supabase.from("leads").select(LEAD_SELECT, { count: "exact" }).eq("review_status", "unreviewed")
+  let query = supabase.from("leads").select(LEAD_SELECT).eq("review_status", "unreviewed")
   query = applySharedQueueFilters(query, filters)
-  const { data, error, count } = await query
+  const { data, error } = await query
     .order("batch_date", { ascending: false })
     .order("follower_count", { ascending: false })
-    .range(from, to)
+    .range(from, to + 1)
   if (error) {
     throw new Error(error.message)
   }
-  return buildPaginatedResult(castRows<LeadRow>(data), count || 0, page)
+  const rows = castRows<LeadRow>(data)
+  const hasNext = rows.length > PAGE_SIZE
+  const items = hasNext ? rows.slice(0, PAGE_SIZE) : rows
+  const startIndex = items.length ? from + 1 : 0
+  const endIndex = items.length ? from + items.length : 0
+
+  return {
+    items,
+    total: endIndex + (hasNext ? 1 : 0),
+    page,
+    pageSize: PAGE_SIZE,
+    totalPages: hasNext ? page + 1 : page,
+    hasNext,
+    hasPrevious: page > 1,
+    startIndex,
+    endIndex,
+  }
 }
 
 export async function getOwnerQueue(): Promise<LeadRow[]> {
