@@ -9,11 +9,25 @@ import { getReviewerHistory, getReviewQueue, getRunStatus } from "@/lib/data"
 type SearchParams = {
   page?: string
   view?: string
+  q?: string
+}
+
+function buildReviewHref(view: "queue" | "history", q?: string) {
+  const params = new URLSearchParams()
+  if (view === "history") {
+    params.set("view", "history")
+  }
+  if (q?.trim()) {
+    params.set("q", q.trim())
+  }
+  const query = params.toString()
+  return query ? `/review?${query}` : "/review"
 }
 
 export default async function ReviewQueuePage({ searchParams }: { searchParams: SearchParams }) {
   const session = await requireSession()
   const activeView = session.role === "reviewer" && searchParams.view === "history" ? "history" : "queue"
+  const searchQuery = searchParams.q?.trim() || ""
   const [queue, runStatus] = await Promise.all([
     activeView === "history" ? getReviewerHistory(session.email, searchParams) : getReviewQueue(searchParams),
     getRunStatus(),
@@ -43,7 +57,7 @@ export default async function ReviewQueuePage({ searchParams }: { searchParams: 
       {session.role === "reviewer" ? (
         <div className="flex flex-wrap gap-2">
           <Link
-            href="/review"
+            href={buildReviewHref("queue", searchQuery)}
             className={[
               "rounded-full px-4 py-2 text-sm font-medium",
               activeView === "queue" ? "bg-[#c9a96e]/15 text-[#d4b87d]" : "bg-white/[0.04] text-slateWarm hover:text-ink",
@@ -52,7 +66,7 @@ export default async function ReviewQueuePage({ searchParams }: { searchParams: 
             Needs review
           </Link>
           <Link
-            href="/review?view=history"
+            href={buildReviewHref("history", searchQuery)}
             className={[
               "rounded-full px-4 py-2 text-sm font-medium",
               activeView === "history" ? "bg-[#c9a96e]/15 text-[#d4b87d]" : "bg-white/[0.04] text-slateWarm hover:text-ink",
@@ -63,6 +77,25 @@ export default async function ReviewQueuePage({ searchParams }: { searchParams: 
         </div>
       ) : null}
 
+      <form className="panel flex flex-wrap items-center gap-3 p-4" action="/review" method="get">
+        {activeView === "history" ? <input type="hidden" name="view" value="history" /> : null}
+        <input
+          type="search"
+          name="q"
+          defaultValue={searchQuery}
+          placeholder="Search handle, name, or email"
+          className="min-w-[240px] flex-1"
+        />
+        <button type="submit" className="gold-button px-4 py-2 text-sm">
+          Search
+        </button>
+        {searchQuery ? (
+          <Link href={buildReviewHref(activeView, "")} className="ghost-button px-4 py-2 text-sm">
+            Clear
+          </Link>
+        ) : null}
+      </form>
+
       <PaginationControls
         pathname="/review"
         page={queue.page}
@@ -72,7 +105,7 @@ export default async function ReviewQueuePage({ searchParams }: { searchParams: 
         startIndex={queue.startIndex}
         endIndex={queue.endIndex}
         total={queue.total}
-        searchParams={activeView === "history" ? { view: "history" } : {}}
+        searchParams={activeView === "history" ? { view: "history", q: searchQuery || undefined } : { q: searchQuery || undefined }}
       />
 
       <div className="space-y-4">
@@ -103,7 +136,7 @@ export default async function ReviewQueuePage({ searchParams }: { searchParams: 
         startIndex={queue.startIndex}
         endIndex={queue.endIndex}
         total={queue.total}
-        searchParams={activeView === "history" ? { view: "history" } : {}}
+        searchParams={activeView === "history" ? { view: "history", q: searchQuery || undefined } : { q: searchQuery || undefined }}
       />
     </div>
   )
