@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "doctor": "node scripts/repo-doctor.js",
+    "preflight": "npm run doctor && npm run build",
     "hash-password": "node scripts/hash-password.js"
   },
   "dependencies": {

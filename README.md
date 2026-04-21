@@ -2,6 +2,12 @@
 
 Separate Vercel review desk for `finder_v1`.
 
+This repository is the deployed approval-desk app for:
+
+- `https://finder-review-app.vercel.app`
+
+If you are in the parent workspace (`/Users/alexwalsh/Documents/New project`), this is the repo you should use for approval-desk Git, build, and deploy work.
+
 ## What it does
 
 - shows the VA review queue
@@ -46,6 +52,28 @@ Put the resulting value into:
 ```bash
 npm install
 npm run dev
+```
+
+## Release safety
+
+Before shipping, run:
+
+```bash
+npm run doctor
+npm run build
+```
+
+`npm run doctor` verifies that:
+
+- you are inside the `finder-review-app` Git repo
+- the origin remote points at the approval-desk GitHub repo
+- the linked Vercel project is `finder-review-app`
+- the working tree is clean before a release
+
+If you want the identity checks without the clean-tree requirement while you are actively editing, run:
+
+```bash
+npm run doctor -- --allow-dirty
 ```
 
 ## Production check
