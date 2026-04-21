@@ -8,32 +8,24 @@ import type { CronJobRow, FileEntry, LeadRow, ReviewQueueResult, WorkerEvent } f
 const LEAD_SELECT = [
   "id",
   "first_name",
-  "first_name_verified",
   "full_name",
   "email",
   "email_source",
   "instagram_handle",
-  "instagram_url",
   "follower_count",
   "status",
   "bio",
-  "source",
   "source_detail",
   "batch_date",
   "review_status",
   "reviewed_at",
   "reviewed_by",
   "review_notes",
-  "exported_at",
-  "export_batch_id",
-  "sent_to_smartlead",
-  "smartlead_campaign_id",
-  "smartlead_sent_at",
   "created_at",
 ].join(",")
 
 const BUCKET_NAME = getOptionalEnv("FINDER_OUTPUT_BUCKET") || "finder-outputs"
-const PAGE_SIZE = 25
+const PAGE_SIZE = 10
 
 export type ReviewFilters = {
   q?: string
@@ -256,7 +248,7 @@ export async function getReviewQueue(filters: ReviewFilters): Promise<ReviewQueu
   query = applySharedQueueFilters(query, filters)
   const { data, error } = await query
     .order("batch_date", { ascending: false })
-    .order("follower_count", { ascending: false })
+    .order("created_at", { ascending: false })
     .range(from, to + 1)
   if (error) {
     throw new Error(error.message)
