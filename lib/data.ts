@@ -3,7 +3,7 @@ import "server-only"
 import { createAdminClient } from "@/lib/supabase-admin"
 import { getOptionalEnv } from "@/lib/env"
 import { maybeFreshenPendingSmartlead } from "@/lib/smartlead"
-import type { CronJobRow, FileEntry, LeadRow, WorkerEvent } from "@/lib/types"
+import type { CronJobRow, FileEntry, LeadRow, ReviewQueueResult, WorkerEvent } from "@/lib/types"
 
 const LEAD_SELECT = [
   "id",
@@ -33,16 +33,50 @@ const LEAD_SELECT = [
 ].join(",")
 
 const BUCKET_NAME = getOptionalEnv("FINDER_OUTPUT_BUCKET") || "finder-outputs"
+const PAGE_SIZE = 25
 
 export type ReviewFilters = {
   q?: string
   batchDate?: string
   emailType?: string
   source?: string
+  page?: string
 }
 
 function castRows<T>(rows: unknown): T[] {
   return ((rows as T[] | null) || []) as T[]
+}
+
+function normalizePage(value: string | undefined): number {
+  if (!value) {
+    return 1
+  }
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return 1
+  }
+  return parsed
+}
+
+function buildPaginatedResult<T>(items: T[], total: number, page: number) {
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const currentPage = Math.min(page, totalPages)
+  const hasNext = currentPage < totalPages
+  const hasPrevious = currentPage > 1
+  const startIndex = total === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1
+  const endIndex = total === 0 ? 0 : startIndex + items.length - 1
+
+  return {
+    items,
+    total,
+    page: currentPage,
+    pageSize: PAGE_SIZE,
+    totalPages,
+    hasNext,
+    hasPrevious,
+    startIndex,
+    endIndex,
+  }
 }
 
 function applySharedQueueFilters(query: any, filters: ReviewFilters) {
@@ -213,15 +247,21 @@ export async function getDashboardData() {
   }
 }
 
-export async function getReviewQueue(filters: ReviewFilters): Promise<LeadRow[]> {
+export async function getReviewQueue(filters: ReviewFilters): Promise<ReviewQueueResult> {
   const supabase = createAdminClient()
-  let query = supabase.from("leads").select(LEAD_SELECT).eq("review_status", "unreviewed")
+  const page = normalizePage(filters.page)
+  const from = (page - 1) * PAGE_SIZE
+  const to = from + PAGE_SIZE - 1
+  let query = supabase.from("leads").select(LEAD_SELECT, { count: "exact" }).eq("review_status", "unreviewed")
   query = applySharedQueueFilters(query, filters)
-  const { data, error } = await query.order("batch_date", { ascending: false }).order("follower_count", { ascending: false }).limit(150)
+  const { data, error, count } = await query
+    .order("batch_date", { ascending: false })
+    .order("follower_count", { ascending: false })
+    .range(from, to)
   if (error) {
     throw new Error(error.message)
   }
-  return castRows<LeadRow>(data)
+  return buildPaginatedResult(castRows<LeadRow>(data), count || 0, page)
 }
 
 export async function getOwnerQueue(): Promise<LeadRow[]> {
