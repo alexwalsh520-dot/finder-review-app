@@ -19,6 +19,7 @@
   --gold-text: #d4b87d;
   --gold-bg: rgba(201, 169, 110, 0.08);
   --gold-border: rgba(201, 169, 110, 0.18);
+  --gold-glow: rgba(201, 169, 110, 0.45);
 }
 
 body {
@@ -203,4 +204,97 @@ td {
     letter-spacing: 0.22em;
     text-transform: uppercase;
   }
+}
+
+@keyframes scraper-border-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes scraper-glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 1px rgba(201, 169, 110, 0.12), 0 0 18px rgba(201, 169, 110, 0.12);
+  }
+  50% {
+    box-shadow: 0 0 0 1px rgba(201, 169, 110, 0.24), 0 0 30px rgba(201, 169, 110, 0.24);
+  }
+}
+
+@keyframes terminal-caret {
+  0%, 45% {
+    opacity: 1;
+  }
+  55%, 100% {
+    opacity: 0.2;
+  }
+}
+
+.scraper-live-shell {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.1rem;
+  padding: 1px;
+  animation: scraper-glow-pulse 2.8s ease-in-out infinite;
+}
+
+.scraper-live-shell::before {
+  content: "";
+  position: absolute;
+  inset: -35%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 250deg,
+    rgba(201, 169, 110, 0.06) 285deg,
+    rgba(201, 169, 110, 0.9) 320deg,
+    rgba(201, 169, 110, 0.16) 342deg,
+    transparent 360deg
+  );
+  animation: scraper-border-spin 7.5s linear infinite;
+}
+
+.scraper-live-inner {
+  position: relative;
+  z-index: 1;
+  border-radius: calc(1.1rem - 1px);
+  background:
+    linear-gradient(180deg, rgba(201, 169, 110, 0.05), rgba(201, 169, 110, 0.02)),
+    #101014;
+  border: 1px solid rgba(201, 169, 110, 0.14);
+  backdrop-filter: blur(8px);
+}
+
+.scraper-terminal-line {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  color: rgba(255, 228, 181, 0.86);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(201, 169, 110, 0.16);
+  background: rgba(0, 0, 0, 0.2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.scraper-terminal-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: #d4b87d;
+  box-shadow: 0 0 14px var(--gold-glow);
+  flex: 0 0 auto;
+}
+
+.scraper-terminal-caret {
+  animation: terminal-caret 1.1s steps(1) infinite;
 }

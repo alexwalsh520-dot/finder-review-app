@@ -19,7 +19,7 @@ export default async function LoginPage() {
               Review new leads cleanly before they ever reach Smartlead.
             </h1>
             <p className="max-w-lg text-base text-stone-300">
-              The worker finds the leads, Supabase stores the truth, and this app is the review desk for names,
+              The scraper finds the leads, Supabase stores the truth, and this app is the review desk for names,
               quality, approval, export, and sent-state tracking.
             </p>
           </div>
