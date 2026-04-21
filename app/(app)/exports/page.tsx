@@ -1,10 +1,11 @@
+import { PaginationControls } from "@/components/pagination-controls"
 import { requireSession } from "@/lib/auth"
 import { formatDateTime } from "@/lib/format"
 import { getExportHistory } from "@/lib/data"
 
-export default async function ExportsPage() {
+export default async function ExportsPage({ searchParams }: { searchParams?: { page?: string } }) {
   await requireSession(["owner"])
-  const data = await getExportHistory()
+  const data = await getExportHistory(searchParams?.page)
 
   return (
     <div className="space-y-6 p-2 md:p-4">
@@ -30,10 +31,24 @@ export default async function ExportsPage() {
           <div className="panel p-5">
             <div className="flex items-center justify-between gap-4">
               <p className="section-label">Pending Smartlead confirmation</p>
-              <p className="text-sm text-slateWarm">{data.pending.length} rows</p>
+              <p className="text-sm text-slateWarm">
+                {data.pending.total ? `Showing ${data.pending.startIndex}-${data.pending.endIndex} of ${data.pending.total}` : "0 rows"}
+              </p>
+            </div>
+            <div className="mt-4">
+              <PaginationControls
+                pathname="/exports"
+                page={data.pending.page}
+                totalPages={data.pending.totalPages}
+                hasNext={data.pending.hasNext}
+                hasPrevious={data.pending.hasPrevious}
+                startIndex={data.pending.startIndex}
+                endIndex={data.pending.endIndex}
+                total={data.pending.total}
+              />
             </div>
             <div className="mt-4 space-y-3">
-              {data.pending.map((lead) => (
+              {data.pending.items.map((lead) => (
                 <article key={lead.id} className="panel-muted p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
@@ -50,10 +65,24 @@ export default async function ExportsPage() {
           <div className="panel p-5">
             <div className="flex items-center justify-between gap-4">
               <p className="section-label">Recently confirmed sent</p>
-              <p className="text-sm text-slateWarm">{data.sent.length} rows</p>
+              <p className="text-sm text-slateWarm">
+                {data.sent.total ? `Showing ${data.sent.startIndex}-${data.sent.endIndex} of ${data.sent.total}` : "0 rows"}
+              </p>
+            </div>
+            <div className="mt-4">
+              <PaginationControls
+                pathname="/exports"
+                page={data.sent.page}
+                totalPages={data.sent.totalPages}
+                hasNext={data.sent.hasNext}
+                hasPrevious={data.sent.hasPrevious}
+                startIndex={data.sent.startIndex}
+                endIndex={data.sent.endIndex}
+                total={data.sent.total}
+              />
             </div>
             <div className="mt-4 space-y-3">
-              {data.sent.map((lead) => (
+              {data.sent.items.map((lead) => (
                 <article key={lead.id} className="panel-muted p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>

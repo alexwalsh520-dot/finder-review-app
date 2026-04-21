@@ -11,7 +11,10 @@ export async function POST(request: Request) {
       return jsonError(new Error("Authentication required."), 401)
     }
     const body = await request.json()
-    const result = await exportApprovedLeads(body.leadIds || [], session)
+    const result = await exportApprovedLeads(
+      body.filters ? { filters: body.filters, leadIds: body.leadIds || [] } : body.leadIds || [],
+      session,
+    )
     return new NextResponse(result.csv, {
       status: 200,
       headers: {

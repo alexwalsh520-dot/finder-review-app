@@ -13,7 +13,7 @@ export default function ProtectedAppError({ error, reset }: Props) {
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slateWarm">Finder Review</p>
           <h2 className="mt-2 text-3xl font-semibold text-ink">The app hit a server problem.</h2>
           <p className="mt-2 text-sm text-slateWarm">
-            Try reloading this screen. If it keeps happening, go back to login and we can check the backend env or data connection next.
+            Try reloading this screen. If it keeps happening, use the login page and we can check the Vercel env or backend status next.
           </p>
         </div>
 

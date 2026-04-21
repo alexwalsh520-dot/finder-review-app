@@ -1,99 +1,96 @@
-import Link from "next/link"
-
+import { DashboardAutoRefresh } from "@/components/dashboard-auto-refresh"
+import { DailyProgressChart } from "@/components/daily-progress-chart"
 import { requireSession } from "@/lib/auth"
 import { getDashboardData } from "@/lib/data"
-import { formatDateTime } from "@/lib/format"
+import { formatDayLabel } from "@/lib/format"
+import Link from "next/link"
 
-const cards = [
-  { key: "unreviewed", label: "Unreviewed" },
-  { key: "waitingOwner", label: "Waiting for owner" },
-  { key: "flagged", label: "Flagged" },
-  { key: "ready", label: "Ready for export" },
-  { key: "pendingExport", label: "Pending Smartlead" },
-  { key: "sent", label: "Sent" },
-] as const
+type SearchParams = Promise<{ day?: string }> | { day?: string }
 
-export default async function DashboardPage() {
+export const dynamic = "force-dynamic"
+
+export default async function DashboardPage({ searchParams }: { searchParams?: SearchParams }) {
   await requireSession()
-  const data = await getDashboardData()
+  const resolvedSearchParams = searchParams ? await searchParams : {}
+  const data = await getDashboardData(resolvedSearchParams.day)
+  const chartRows = [...data.dailyEmailPerformance.slice(0, 7)].reverse()
+  const reviewedShare = data.counts.todayEmailCount > 0 ? Math.round((data.counts.todayReviewedCount / data.counts.todayEmailCount) * 100) : 0
+  const todayParts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Makassar",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date())
+  const todayLookup = Object.fromEntries(todayParts.map((part) => [part.type, part.value]))
+  const todayBusinessDate = `${todayLookup.year}-${todayLookup.month}-${todayLookup.day}`
+  const selectedIndex = data.availableDays.findIndex((day) => day === data.selectedDay)
+  const olderDay = selectedIndex >= 0 && selectedIndex < data.availableDays.length - 1 ? data.availableDays[selectedIndex + 1] : null
+  const newerDay = selectedIndex > 0 ? data.availableDays[selectedIndex - 1] : null
 
   return (
     <div className="space-y-6 p-2 md:p-4">
-      <div className="panel overflow-hidden px-6 py-6 text-white">
-        <p className="section-label text-emberSoft">Overview</p>
-        <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
+      <DashboardAutoRefresh enabled={data.selectedDay === todayBusinessDate} />
+      <section className="panel p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h2 className="text-3xl font-semibold">Review pipeline at a glance</h2>
-            <p className="mt-2 text-sm text-white/55">
-              Today the worker reports {data.counts.todayEmailCount} emails and {data.counts.pendingDocCount} pending DOC jobs.
-            </p>
+            <div className="flex items-center gap-2">
+              <Link
+                href={olderDay ? `/dashboard?day=${olderDay}` : "/dashboard"}
+                className={`ghost-button flex h-9 w-9 items-center justify-center p-0 ${olderDay ? "" : "pointer-events-none opacity-30"}`}
+                aria-disabled={!olderDay}
+              >
+                ←
+              </Link>
+              <Link
+                href={newerDay ? `/dashboard?day=${newerDay}` : "/dashboard"}
+                className={`ghost-button flex h-9 w-9 items-center justify-center p-0 ${newerDay ? "" : "pointer-events-none opacity-30"}`}
+                aria-disabled={!newerDay}
+              >
+                →
+              </Link>
+            </div>
+            <h2 className="mt-3 text-3xl font-semibold text-ink">{formatDayLabel(data.selectedDay)}</h2>
           </div>
-          <Link href="/ready" className="gold-button px-4 py-3 text-sm">
-            Open Ready for Smartlead
-          </Link>
         </div>
-      </div>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {cards.map((card) => (
-          <article key={card.key} className="panel p-5">
-            <p className="section-label">{card.label}</p>
-            <p className="mt-4 text-4xl font-semibold text-ink">{data.counts[card.key]}</p>
+        <div className="mt-5 grid gap-3 md:grid-cols-4">
+          <article className="panel-muted p-4">
+            <p className="section-label">New emails today</p>
+            <p className="mt-2 text-3xl font-semibold text-ink">{data.counts.todayEmailCount}</p>
           </article>
-        ))}
+          <article className="panel-muted p-4">
+            <p className="section-label">Reviewed today</p>
+            <p className="mt-2 text-3xl font-semibold text-ink">{data.counts.todayReviewedCount}</p>
+          </article>
+          <article className="panel-muted p-4">
+            <p className="section-label">Waiting on Alex</p>
+            <p className="mt-2 text-3xl font-semibold text-ink">{data.counts.todayWaitingOwnerCount}</p>
+          </article>
+          <article className="panel-muted p-4">
+            <p className="section-label">Ready for Smartlead</p>
+            <p className="mt-2 text-3xl font-semibold text-ink">{data.counts.todayReadyCount}</p>
+          </article>
+        </div>
+
+        <div className="mt-5 space-y-3">
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <p className="font-medium text-ink">{data.counts.todayUnreviewedCount} still waiting review</p>
+            <p className="text-slateWarm">{reviewedShare}% reviewed</p>
+          </div>
+          <div className="h-3 overflow-hidden rounded-full bg-black/10">
+            <div
+              className="h-full rounded-full bg-[#c9a96e] transition-all"
+              style={{ width: `${Math.min(Math.max(reviewedShare, 0), 100)}%` }}
+            />
+          </div>
+        </div>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <div className="panel p-5">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="section-label">Worker health</p>
-              <h3 className="mt-2 text-2xl font-semibold text-ink">Cloud jobs</h3>
-            </div>
-            <p className="text-sm text-slateWarm">
-              Owner approval is <span className="font-semibold text-ink">{data.requireOwnerApproval ? "on" : "off"}</span>
-            </p>
-          </div>
-          <div className="table-shell mt-5">
-            <table className="text-sm">
-              <thead className="table-head text-left">
-                <tr>
-                  <th className="px-4 py-3">Job</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Last run</th>
-                  <th className="px-4 py-3">Next run</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.workerJobs.map((job) => (
-                  <tr key={job.id} className="border-t border-stone-200/80">
-                    <td className="px-4 py-4">
-                      <p className="font-medium text-ink">{job.name}</p>
-                      <p className="text-xs text-slateWarm">{job.schedule}</p>
-                    </td>
-                    <td className="px-4 py-4 text-ink">{job.last_status || "—"}</td>
-                    <td className="px-4 py-4 text-slateWarm">{formatDateTime(job.last_run_at)}</td>
-                    <td className="px-4 py-4 text-slateWarm">{formatDateTime(job.next_run_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="panel p-5">
-          <p className="section-label">Recent worker events</p>
-          <div className="mt-5 space-y-3">
-            {data.workerEvents.slice(0, 8).map((event) => (
-              <article key={event.id} className="panel-muted p-4">
-                <div className="flex items-center justify-between gap-4">
-                  <p className="font-medium text-ink">{event.event}</p>
-                  <p className="text-xs uppercase tracking-[0.2em] text-slateWarm">{event.status}</p>
-                </div>
-                <p className="mt-2 text-xs text-slateWarm">{formatDateTime(event.created_at)}</p>
-              </article>
-            ))}
-          </div>
+      <section className="panel p-5">
+        <p className="section-label">Daily progress</p>
+        <h3 className="mt-2 text-2xl font-semibold text-ink">New emails by day</h3>
+        <div className="mt-4">
+          <DailyProgressChart rows={chartRows} />
         </div>
       </section>
     </div>

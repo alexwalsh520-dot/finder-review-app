@@ -1,24 +1,63 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { startTransition, useState } from "react"
+import { startTransition, useEffect, useState } from "react"
 
 import { createInstagramUrl } from "@/lib/format"
-import type { LeadRow } from "@/lib/types"
+import type { LeadCoachingFilter, LeadGender, LeadRow } from "@/lib/types"
 
-export function ReadyExportTable({ leads }: { leads: LeadRow[] }) {
+type ReadyExportFilters = {
+  gender?: LeadGender | null
+  coaching?: LeadCoachingFilter | null
+}
+
+function leadGenderLabel(lead: LeadRow): string {
+  const gender = lead.review_snapshot?.gender || lead.gender
+  if (gender === "male") {
+    return "Male"
+  }
+  if (gender === "female") {
+    return "Female"
+  }
+  return "—"
+}
+
+function leadCoachingLabel(lead: LeadRow): string {
+  if (lead.review_snapshot?.has_coaching === true) {
+    return "Has coaching"
+  }
+  if (lead.review_snapshot?.has_coaching === false) {
+    return "No coaching"
+  }
+  return "—"
+}
+
+export function ReadyExportTable({
+  leads,
+  activeFilters,
+  matchingTotal,
+}: {
+  leads: LeadRow[]
+  activeFilters: ReadyExportFilters
+  matchingTotal: number
+}) {
   const router = useRouter()
   const [selected, setSelected] = useState<string[]>(leads.map((lead) => lead.id))
   const [status, setStatus] = useState("")
   const [pending, setPending] = useState(false)
 
   const allSelected = selected.length === leads.length && leads.length > 0
+  const hasActiveSegment = Boolean(activeFilters.gender || activeFilters.coaching)
+
+  useEffect(() => {
+    setSelected(leads.map((lead) => lead.id))
+  }, [leads])
 
   function toggle(id: string) {
     setSelected((current) => (current.includes(id) ? current.filter((value) => value !== id) : [...current, id]))
   }
 
-  async function exportSelected() {
+  async function runExport(body: Record<string, unknown>, successMessage: string) {
     setPending(true)
     setStatus("")
     try {
@@ -27,7 +66,7 @@ export function ReadyExportTable({ leads }: { leads: LeadRow[] }) {
         headers: {
           "content-type": "application/json",
         },
-        body: JSON.stringify({ leadIds: selected }),
+        body: JSON.stringify(body),
       })
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}))
@@ -43,7 +82,7 @@ export function ReadyExportTable({ leads }: { leads: LeadRow[] }) {
       anchor.download = filename
       anchor.click()
       URL.revokeObjectURL(url)
-      setStatus("Export complete")
+      setStatus(successMessage)
       startTransition(() => {
         router.refresh()
       })
@@ -54,19 +93,45 @@ export function ReadyExportTable({ leads }: { leads: LeadRow[] }) {
     }
   }
 
+  async function exportSelected() {
+    await runExport({ leadIds: selected }, "Selected leads exported")
+  }
+
+  async function exportMatchingSegment() {
+    await runExport(
+      {
+        filters: {
+          gender: activeFilters.gender || undefined,
+          coaching: activeFilters.coaching || undefined,
+        },
+      },
+      "Matching segment exported",
+    )
+  }
+
   return (
     <div className="space-y-4">
       <div className="panel-muted flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-        <label className="flex items-center gap-2 text-sm font-medium text-ink">
-          <input
-            type="checkbox"
-            checked={allSelected}
-            onChange={() => setSelected(allSelected ? [] : leads.map((lead) => lead.id))}
-          />
-          Select all
-        </label>
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-sm font-medium text-ink">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={() => setSelected(allSelected ? [] : leads.map((lead) => lead.id))}
+            />
+            Select all on this page
+          </label>
+          {hasActiveSegment ? (
+            <p className="text-xs text-slateWarm">Segment export uses your current filters and includes all {matchingTotal} matching leads across every page.</p>
+          ) : null}
+        </div>
         <div className="flex items-center gap-3">
           <p className="text-sm text-slateWarm">{selected.length} selected</p>
+          {hasActiveSegment ? (
+            <button type="button" onClick={exportMatchingSegment} disabled={pending || matchingTotal === 0} className="ghost-button px-4 py-2 text-sm">
+              {pending ? "Exporting..." : `Export ${matchingTotal} matching`}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={exportSelected}
@@ -86,6 +151,8 @@ export function ReadyExportTable({ leads }: { leads: LeadRow[] }) {
               <th className="px-4 py-3">Lead</th>
               <th className="px-4 py-3">First name</th>
               <th className="px-4 py-3">Email</th>
+              <th className="px-4 py-3">Gender</th>
+              <th className="px-4 py-3">Coaching</th>
               <th className="px-4 py-3">Source</th>
             </tr>
           </thead>
@@ -105,6 +172,8 @@ export function ReadyExportTable({ leads }: { leads: LeadRow[] }) {
                 </td>
                 <td className="px-4 py-4">{lead.first_name || "—"}</td>
                 <td className="px-4 py-4">{lead.email}</td>
+                <td className="px-4 py-4 text-slateWarm">{leadGenderLabel(lead)}</td>
+                <td className="px-4 py-4 text-slateWarm">{leadCoachingLabel(lead)}</td>
                 <td className="px-4 py-4 text-slateWarm">{lead.source_detail || lead.source || "—"}</td>
               </tr>
             ))}

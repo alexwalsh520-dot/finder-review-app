@@ -61,11 +61,14 @@ export async function maybeFreshenPendingSmartlead(limit = 25) {
   }
 
   const supabase = createAdminClient()
-  const { data: workerJob } = await supabase
+  const { data: workerJob, error: workerJobError } = await supabase
     .from("cron_jobs")
     .select("last_run_at")
     .eq("id", WORKER_RECONCILE_JOB_ID)
     .maybeSingle()
+  if (workerJobError) {
+    return { refreshed: false, reason: "job_lookup_failed", confirmed: 0 }
+  }
 
   if (lastRunIsFresh(workerJob?.last_run_at ?? null, 8)) {
     return { refreshed: false, reason: "worker_recent", confirmed: 0 }
@@ -81,44 +84,53 @@ export async function maybeFreshenPendingSmartlead(limit = 25) {
     .limit(limit)
 
   if (error) {
-    throw new Error(error.message)
+    return { refreshed: false, reason: "pending_lookup_failed", confirmed: 0 }
   }
 
+  const pendingRows = Array.isArray(rows) ? rows : rows ? [rows] : []
   let confirmed = 0
-  for (const row of rows ?? []) {
-    const email = (row.email || "").trim().toLowerCase()
-    if (!email) {
+  for (const row of pendingRows) {
+    try {
+      const email = (row.email || "").trim().toLowerCase()
+      if (!email) {
+        continue
+      }
+      const smartleadLead = await lookupSmartleadLeadByEmail(email)
+      if (!smartleadLead?.id) {
+        continue
+      }
+      const campaignId = extractCampaignId(smartleadLead)
+      const patch: Record<string, string | boolean> = {
+        sent_to_smartlead: true,
+        smartlead_sent_at: new Date().toISOString(),
+        review_status: "approved",
+      }
+      if (campaignId) {
+        patch.smartlead_campaign_id = campaignId
+      }
+      const { error: updateError } = await supabase.from("leads").update(patch).eq("id", row.id)
+      if (updateError) {
+        continue
+      }
+      confirmed += 1
+      try {
+        await supabase.from("lead_review_events").insert({
+          lead_id: row.id,
+          actor_role: "app_server",
+          actor_identifier: "finder-review-app",
+          action: "smartlead_confirmed",
+          payload: {
+            email,
+            instagram_handle: row.instagram_handle,
+            campaign_id: campaignId,
+          },
+        })
+      } catch {
+        // Confirmation already landed on the lead row; do not treat audit-event failure as a sync failure.
+      }
+    } catch {
       continue
     }
-    const smartleadLead = await lookupSmartleadLeadByEmail(email)
-    if (!smartleadLead?.id) {
-      continue
-    }
-    const campaignId = extractCampaignId(smartleadLead)
-    const patch: Record<string, string | boolean> = {
-      sent_to_smartlead: true,
-      smartlead_sent_at: new Date().toISOString(),
-      review_status: "approved",
-    }
-    if (campaignId) {
-      patch.smartlead_campaign_id = campaignId
-    }
-    const { error: updateError } = await supabase.from("leads").update(patch).eq("id", row.id)
-    if (updateError) {
-      throw new Error(updateError.message)
-    }
-    await supabase.from("lead_review_events").insert({
-      lead_id: row.id,
-      actor_role: "app_server",
-      actor_identifier: "finder-review-app",
-      action: "smartlead_confirmed",
-      payload: {
-        email,
-        instagram_handle: row.instagram_handle,
-        campaign_id: campaignId,
-      },
-    })
-    confirmed += 1
   }
 
   return {
