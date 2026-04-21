@@ -6,7 +6,7 @@ This repository is the deployed approval-desk app for:
 
 - `https://finder-review-app.vercel.app`
 
-If you are in the parent workspace (`/Users/alexwalsh/Documents/New project`), this is the repo you should use for approval-desk Git, build, and deploy work.
+If you are working inside a larger umbrella workspace, this is the repo you should use for approval-desk Git, build, and deploy work.
 
 ## What it does
 
