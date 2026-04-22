@@ -32,13 +32,19 @@ export default async function ReviewQueuePage({ searchParams }: { searchParams: 
     activeView === "history" ? getReviewerHistory(session.email, searchParams) : getReviewQueue(searchParams),
     getRunStatus(),
   ])
-  const showingLabel =
-    queue.total > queue.items.length ? `Showing ${queue.startIndex}-${queue.endIndex} of ${queue.total} matching leads` : `${queue.total} matching leads`
+  const historyNeedsSearch = activeView === "history" && !searchQuery
+  const showingLabel = historyNeedsSearch
+    ? "Search by handle, name, or email"
+    : queue.total > queue.items.length
+      ? `Showing ${queue.startIndex}-${queue.endIndex} of ${queue.total} matching leads`
+      : `${queue.total} matching leads`
   const todaySummary = `${runStatus.topUp.todayEmailCount} new today · ${runStatus.topUp.todayUnreviewedCount} still waiting review`
   const heading = activeView === "history" ? "Your review history" : "Unreviewed emailed leads"
   const subheading =
     activeView === "history"
-      ? "Open any past decision to review it again or make changes before it gets sent."
+      ? historyNeedsSearch
+        ? "Search for a handle, name, or email to reopen a lead you already touched, including leads already sent to Smartlead."
+        : "Open any past decision to review it again or make changes before it gets sent."
       : todaySummary
 
   return (
@@ -96,17 +102,19 @@ export default async function ReviewQueuePage({ searchParams }: { searchParams: 
         ) : null}
       </form>
 
-      <PaginationControls
-        pathname="/review"
-        page={queue.page}
-        totalPages={queue.totalPages}
-        hasNext={queue.hasNext}
-        hasPrevious={queue.hasPrevious}
-        startIndex={queue.startIndex}
-        endIndex={queue.endIndex}
-        total={queue.total}
-        searchParams={activeView === "history" ? { view: "history", q: searchQuery || undefined } : { q: searchQuery || undefined }}
-      />
+      {!historyNeedsSearch ? (
+        <PaginationControls
+          pathname="/review"
+          page={queue.page}
+          totalPages={queue.totalPages}
+          hasNext={queue.hasNext}
+          hasPrevious={queue.hasPrevious}
+          startIndex={queue.startIndex}
+          endIndex={queue.endIndex}
+          total={queue.total}
+          searchParams={activeView === "history" ? { view: "history", q: searchQuery || undefined } : { q: searchQuery || undefined }}
+        />
+      ) : null}
 
       <div className="space-y-4">
         <div className="panel-muted hidden px-4 py-3 md:grid md:grid-cols-[1.2fr_1.35fr_0.7fr_0.75fr_0.95fr_auto] md:items-center md:gap-3">
@@ -122,22 +130,26 @@ export default async function ReviewQueuePage({ searchParams }: { searchParams: 
         ))}
         {!queue.items.length ? (
           <div className="panel p-6">
-            <p className="text-sm text-slateWarm">No leads match the current filters.</p>
+            <p className="text-sm text-slateWarm">
+              {historyNeedsSearch ? "Search for a specific lead to open reviewer history without loading the full archive." : "No leads match the current filters."}
+            </p>
           </div>
         ) : null}
       </div>
 
-      <PaginationControls
-        pathname="/review"
-        page={queue.page}
-        totalPages={queue.totalPages}
-        hasNext={queue.hasNext}
-        hasPrevious={queue.hasPrevious}
-        startIndex={queue.startIndex}
-        endIndex={queue.endIndex}
-        total={queue.total}
-        searchParams={activeView === "history" ? { view: "history", q: searchQuery || undefined } : { q: searchQuery || undefined }}
-      />
+      {!historyNeedsSearch ? (
+        <PaginationControls
+          pathname="/review"
+          page={queue.page}
+          totalPages={queue.totalPages}
+          hasNext={queue.hasNext}
+          hasPrevious={queue.hasPrevious}
+          startIndex={queue.startIndex}
+          endIndex={queue.endIndex}
+          total={queue.total}
+          searchParams={activeView === "history" ? { view: "history", q: searchQuery || undefined } : { q: searchQuery || undefined }}
+        />
+      ) : null}
     </div>
   )
 }

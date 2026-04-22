@@ -3,6 +3,7 @@ import "server-only"
 import { randomUUID } from "crypto"
 
 import { createAdminClient } from "@/lib/supabase-admin"
+import { recordReviewerHistoryCacheItem } from "@/lib/reviewer-history-cache"
 import { getRequireOwnerApproval, listReadyForSmartleadRows } from "@/lib/data"
 import type {
   AppRole,
@@ -160,6 +161,7 @@ async function insertReviewEvent(
   session: SessionPayload,
   action: string,
   payload: Record<string, unknown>,
+  createdAt?: string,
 ) {
   const supabase = createAdminClient()
   const { error } = await supabase.from("lead_review_events").insert({
@@ -168,6 +170,7 @@ async function insertReviewEvent(
     actor_identifier: session.email,
     action,
     payload,
+    created_at: createdAt || new Date().toISOString(),
   })
   if (error) {
     throw new Error(error.message)
@@ -383,7 +386,21 @@ export async function applyReviewAction(
   }
   if (eventToInsert) {
     try {
-      await insertReviewEvent(leadId, session, eventToInsert.action, eventToInsert.payload)
+      await insertReviewEvent(leadId, session, eventToInsert.action, eventToInsert.payload, now)
+      if (
+        session.role === "reviewer" &&
+        (eventToInsert.action === "save" || eventToInsert.action === "qualified" || eventToInsert.action === "not_qualified")
+      ) {
+        try {
+          await recordReviewerHistoryCacheItem(session.email, {
+            lead_id: leadId,
+            created_at: now,
+            action: eventToInsert.action,
+          })
+        } catch (cacheError) {
+          console.error("Failed to update reviewer history cache", cacheError)
+        }
+      }
     } catch (error) {
       await rollbackLeadUpdate(leadId, {
         first_name: lead.first_name,

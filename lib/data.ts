@@ -1,5 +1,6 @@
 import "server-only"
 
+import { readReviewerHistoryCache } from "@/lib/reviewer-history-cache"
 import { createAdminClient } from "@/lib/supabase-admin"
 import { getOptionalEnv } from "@/lib/env"
 import { maybeFreshenPendingSmartlead } from "@/lib/smartlead"
@@ -396,6 +397,40 @@ async function fetchLeadsByIds(
   }
 
   return rows
+}
+
+async function fetchReviewerTouchedLeadMap(leadIds: string[], reviewerEmail: string): Promise<Map<string, string>> {
+  if (!leadIds.length) {
+    return new Map()
+  }
+
+  const supabase = createAdminClient()
+  const matches = new Map<string, string>()
+
+  for (let index = 0; index < leadIds.length; index += LEAD_ID_FETCH_BATCH_SIZE) {
+    const batchIds = leadIds.slice(index, index + LEAD_ID_FETCH_BATCH_SIZE)
+    const { data, error } = await supabase
+      .from("lead_review_events")
+      .select("lead_id,created_at")
+      .in("lead_id", batchIds)
+      .eq("actor_role", "reviewer")
+      .eq("actor_identifier", reviewerEmail)
+      .in("action", ["qualified", "not_qualified", "save"])
+      .order("created_at", { ascending: false })
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    for (const row of castRows<{ lead_id: string; created_at: string }>(data)) {
+      if (!row.lead_id || matches.has(row.lead_id)) {
+        continue
+      }
+      matches.set(row.lead_id, row.created_at)
+    }
+  }
+
+  return matches
 }
 
 function buildPaginatedResult<T>(items: T[], total: number, page: number): PaginatedResult<T> {
@@ -989,43 +1024,7 @@ export async function getRequireOwnerApproval(): Promise<boolean> {
 
 export async function getDashboardData(dayInput?: string | null) {
   await maybeFreshenPendingSmartlead(15)
-  const [
-    jobs,
-    events,
-    requireOwnerApproval,
-    dailyEmailPerformance,
-    unreviewed,
-    waitingOwnerPositive,
-    waitingOwnerNegative,
-    ready,
-    pendingExport,
-    sent,
-    topUp,
-  ] =
-    await Promise.all([
-      getWorkerJobs(),
-      getWorkerEvents(16),
-      getRequireOwnerApproval(),
-      getDailyEmailPerformance(10),
-      countLeadsByStatus("unreviewed"),
-      countLeadsByStatus("va_approved"),
-      countLeadsByStatus("flagged"),
-      countLeadsByStatus("approved"),
-      countLeadsByStatus("exported_pending_confirmation"),
-      (async () => {
-        const supabase = createAdminClient()
-        const sentRows = await fetchAllRows<{ id: string; email: string | null }>((from, to) =>
-          applyHasEmailFilters(
-            supabase
-              .from("leads")
-              .select("id,email")
-              .eq("sent_to_smartlead", true)
-          ).range(from, to)
-        )
-        return countDistinctLeadEmails(sentRows)
-      })(),
-      getTopUpStatus(),
-    ])
+  const dailyEmailPerformance = await getDailyEmailPerformance(10)
 
   const availableDays = dailyEmailPerformance.map((row) => row.day)
   const requestedDay = normalizeBusinessDay(dayInput)
@@ -1047,11 +1046,6 @@ export async function getDashboardData(dayInput?: string | null) {
     selectedDay,
     availableDays,
     counts: {
-      unreviewed,
-      waitingOwner: waitingOwnerPositive + waitingOwnerNegative,
-      ready,
-      pendingExport,
-      sent,
       todayEmailCount: selectedPerformance.newEmails,
       todayTarget: selectedPerformance.targetEmails,
       todayTargetHit: selectedPerformance.hitTarget,
@@ -1059,15 +1053,8 @@ export async function getDashboardData(dayInput?: string | null) {
       todayWaitingOwnerCount: selectedWaitingOwnerCount,
       todayReadyCount: selectedReadyCount,
       todayUnreviewedCount: selectedUnreviewedCount,
-      todayQualifiedCount: topUp.todayQualifiedCount,
-      qualifiedTarget: topUp.qualifiedTarget,
-      needsTopUp: topUp.needsTopUp,
     },
     dailyEmailPerformance,
-    workerJobs: jobs,
-    requireOwnerApproval,
-    topUp,
-    workerHighlights: events.filter((event) => TOP_UP_EVENT_NAMES.has(event.event)).slice(0, 3).map(summarizeWorkerEvent),
   }
 }
 
@@ -1110,51 +1097,54 @@ export async function getReviewQueue(filters: ReviewFilters): Promise<ReviewQueu
 }
 
 export async function getReviewerHistory(reviewerEmail: string, filters: ReviewFilters): Promise<ReviewQueueResult> {
-  const supabase = createAdminClient()
   const page = normalizePage(filters.page)
   const from = (page - 1) * PAGE_SIZE
   const to = from + PAGE_SIZE - 1
+  const searchQuery = filters.q?.trim() || ""
 
-  const events = await fetchAllRows<{ lead_id: string; created_at: string }>((rangeFrom, rangeTo) =>
-    supabase
-      .from("lead_review_events")
-      .select("lead_id,created_at")
-      .eq("actor_role", "reviewer")
-      .eq("actor_identifier", reviewerEmail)
-      .in("action", ["qualified", "not_qualified", "save"])
-      .order("created_at", { ascending: false })
-      .range(rangeFrom, rangeTo)
-  )
+  if (searchQuery) {
+    const supabase = createAdminClient()
+    const safeSearch = searchQuery.replace(/,/g, " ")
+    const candidateRows = await fetchAllRows<LeadRow>((rangeFrom, rangeTo) =>
+      applyHasEmailFilters(
+        supabase
+          .from("leads")
+          .select(LEAD_SELECT)
+          .in("status", ["email_ready", "mgmt_email"])
+          .or(`instagram_handle.ilike.%${safeSearch}%,full_name.ilike.%${safeSearch}%,email.ilike.%${safeSearch}%`)
+      )
+        .order("created_at", { ascending: false })
+        .range(rangeFrom, rangeTo)
+    )
+    const touchedLeadMap = await fetchReviewerTouchedLeadMap(
+      candidateRows.map((lead) => lead.id),
+      reviewerEmail,
+    )
+    const orderedMatches = candidateRows
+      .filter((lead) => touchedLeadMap.has(lead.id))
+      .sort((left, right) => (touchedLeadMap.get(right.id) || "").localeCompare(touchedLeadMap.get(left.id) || ""))
+    const pageRows = orderedMatches.slice(from, to + 1)
+    const snapshots = await fetchReviewSnapshots(pageRows.map((lead) => lead.id))
+    const items = applyReviewSnapshots(pageRows, snapshots)
+    return buildPaginatedResult(items, orderedMatches.length, page)
+  }
+
+  const cachedItems = await readReviewerHistoryCache(reviewerEmail)
+  if (!cachedItems.length) {
+    return buildPaginatedResult([], 0, page)
+  }
 
   const orderedLeadIds: string[] = []
   const seenLeadIds = new Set<string>()
-  for (const event of events) {
-    if (!event.lead_id || seenLeadIds.has(event.lead_id)) {
+  for (const item of cachedItems) {
+    if (!item.lead_id || seenLeadIds.has(item.lead_id)) {
       continue
     }
-    seenLeadIds.add(event.lead_id)
-    orderedLeadIds.push(event.lead_id)
+    seenLeadIds.add(item.lead_id)
+    orderedLeadIds.push(item.lead_id)
   }
 
-  if (!orderedLeadIds.length) {
-    return buildPaginatedResult([], 0, page)
-  }
-
-  let filteredLeadIds = orderedLeadIds
-  if (filters.q?.trim()) {
-    const filteredRows = await fetchLeadsByIds(orderedLeadIds, {
-      includeSent: true,
-      q: filters.q,
-    })
-    const matchingLeadIds = new Set(filteredRows.map((lead) => lead.id))
-    filteredLeadIds = orderedLeadIds.filter((leadId) => matchingLeadIds.has(leadId))
-  }
-
-  if (!filteredLeadIds.length) {
-    return buildPaginatedResult([], 0, page)
-  }
-
-  const pageLeadIds = filteredLeadIds.slice(from, to + 1)
+  const pageLeadIds = orderedLeadIds.slice(from, to + 1)
   const pageRows = await fetchLeadsByIds(pageLeadIds, {
     includeSent: true,
   })
@@ -1164,7 +1154,7 @@ export async function getReviewerHistory(reviewerEmail: string, filters: ReviewF
     .filter((lead): lead is LeadRow => Boolean(lead))
   const snapshots = await fetchReviewSnapshots(orderedLeads.map((lead) => lead.id))
   const items = applyReviewSnapshots(orderedLeads, snapshots)
-  return buildPaginatedResult(items, filteredLeadIds.length, page)
+  return buildPaginatedResult(items, orderedLeadIds.length, page)
 }
 
 export async function getOwnerQueue(pageInput?: string | number): Promise<LeadListResult> {
