@@ -433,6 +433,85 @@ async function fetchReviewerTouchedLeadMap(leadIds: string[], reviewerEmail: str
   return matches
 }
 
+type HistoryActorRole = "reviewer" | "owner"
+
+async function fetchHistoryLeadWindow(
+  actorRole: HistoryActorRole,
+  actorIdentifier: string,
+  actions: string[],
+  page: number,
+): Promise<{
+  orderedLeadIds: string[]
+  hasNext: boolean
+  startIndex: number
+  endIndex: number
+  total: number
+  totalPages: number
+}> {
+  const supabase = createAdminClient()
+  const from = (page - 1) * PAGE_SIZE
+  const to = from + PAGE_SIZE - 1
+  const targetUniqueCount = to + 2
+  const batchSize = 250
+  const orderedLeadIds: string[] = []
+  const seenLeadIds = new Set<string>()
+  let reachedEnd = false
+
+  for (let rangeFrom = 0; orderedLeadIds.length < targetUniqueCount; rangeFrom += batchSize) {
+    const rangeTo = rangeFrom + batchSize - 1
+    const { data, error } = await supabase
+      .from("lead_review_events")
+      .select("lead_id,created_at")
+      .eq("actor_role", actorRole)
+      .eq("actor_identifier", actorIdentifier)
+      .in("action", actions)
+      .order("created_at", { ascending: false })
+      .range(rangeFrom, rangeTo)
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    const rows = castRows<{ lead_id: string; created_at: string }>(data)
+    if (!rows.length) {
+      reachedEnd = true
+      break
+    }
+
+    for (const row of rows) {
+      if (!row.lead_id || seenLeadIds.has(row.lead_id)) {
+        continue
+      }
+      seenLeadIds.add(row.lead_id)
+      orderedLeadIds.push(row.lead_id)
+      if (orderedLeadIds.length >= targetUniqueCount) {
+        break
+      }
+    }
+
+    if (rows.length < batchSize) {
+      reachedEnd = true
+      break
+    }
+  }
+
+  const pageLeadIds = orderedLeadIds.slice(from, to + 1)
+  const hasNext = orderedLeadIds.length > to + 1
+  const startIndex = pageLeadIds.length ? from + 1 : 0
+  const endIndex = pageLeadIds.length ? from + pageLeadIds.length : 0
+  const total = reachedEnd ? orderedLeadIds.length : endIndex + (hasNext ? 1 : 0)
+  const totalPages = reachedEnd ? Math.max(1, Math.ceil(total / PAGE_SIZE)) : hasNext ? page + 1 : page
+
+  return {
+    orderedLeadIds: pageLeadIds,
+    hasNext,
+    startIndex,
+    endIndex,
+    total,
+    totalPages,
+  }
+}
+
 function buildPaginatedResult<T>(items: T[], total: number, page: number): PaginatedResult<T> {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
@@ -1129,32 +1208,57 @@ export async function getReviewerHistory(reviewerEmail: string, filters: ReviewF
     return buildPaginatedResult(items, orderedMatches.length, page)
   }
 
-  const cachedItems = await readReviewerHistoryCache(reviewerEmail)
-  if (!cachedItems.length) {
-    return buildPaginatedResult([], 0, page)
-  }
-
-  const orderedLeadIds: string[] = []
-  const seenLeadIds = new Set<string>()
-  for (const item of cachedItems) {
-    if (!item.lead_id || seenLeadIds.has(item.lead_id)) {
-      continue
+  try {
+    const window = await fetchHistoryLeadWindow("reviewer", reviewerEmail, ["qualified", "not_qualified", "save"], page)
+    if (!window.orderedLeadIds.length) {
+      return buildPaginatedResult([], 0, page)
     }
-    seenLeadIds.add(item.lead_id)
-    orderedLeadIds.push(item.lead_id)
+    const pageRows = await fetchLeadsByIds(window.orderedLeadIds, {
+      includeSent: true,
+    })
+    const leadMap = new Map(pageRows.map((lead) => [lead.id, lead]))
+    const orderedLeads = window.orderedLeadIds
+      .map((leadId) => leadMap.get(leadId))
+      .filter((lead): lead is LeadRow => Boolean(lead))
+    const snapshots = await fetchReviewSnapshots(orderedLeads.map((lead) => lead.id))
+    const items = applyReviewSnapshots(orderedLeads, snapshots)
+    return {
+      items,
+      total: window.total,
+      page,
+      pageSize: PAGE_SIZE,
+      totalPages: window.totalPages,
+      hasNext: window.hasNext,
+      hasPrevious: page > 1,
+      startIndex: window.startIndex,
+      endIndex: window.endIndex,
+    }
+  } catch {
+    const cachedItems = await readReviewerHistoryCache(reviewerEmail)
+    if (!cachedItems.length) {
+      return buildPaginatedResult([], 0, page)
+    }
+    const orderedLeadIds: string[] = []
+    const seenLeadIds = new Set<string>()
+    for (const item of cachedItems) {
+      if (!item.lead_id || seenLeadIds.has(item.lead_id)) {
+        continue
+      }
+      seenLeadIds.add(item.lead_id)
+      orderedLeadIds.push(item.lead_id)
+    }
+    const pageLeadIds = orderedLeadIds.slice(from, to + 1)
+    const pageRows = await fetchLeadsByIds(pageLeadIds, {
+      includeSent: true,
+    })
+    const leadMap = new Map(pageRows.map((lead) => [lead.id, lead]))
+    const orderedLeads = pageLeadIds
+      .map((leadId) => leadMap.get(leadId))
+      .filter((lead): lead is LeadRow => Boolean(lead))
+    const snapshots = await fetchReviewSnapshots(orderedLeads.map((lead) => lead.id))
+    const items = applyReviewSnapshots(orderedLeads, snapshots)
+    return buildPaginatedResult(items, orderedLeadIds.length, page)
   }
-
-  const pageLeadIds = orderedLeadIds.slice(from, to + 1)
-  const pageRows = await fetchLeadsByIds(pageLeadIds, {
-    includeSent: true,
-  })
-  const leadMap = new Map(pageRows.map((lead) => [lead.id, lead]))
-  const orderedLeads = pageLeadIds
-    .map((leadId) => leadMap.get(leadId))
-    .filter((lead): lead is LeadRow => Boolean(lead))
-  const snapshots = await fetchReviewSnapshots(orderedLeads.map((lead) => lead.id))
-  const items = applyReviewSnapshots(orderedLeads, snapshots)
-  return buildPaginatedResult(items, orderedLeadIds.length, page)
 }
 
 export async function getOwnerQueue(pageInput?: string | number): Promise<LeadListResult> {
@@ -1183,40 +1287,15 @@ export async function getOwnerQueue(pageInput?: string | number): Promise<LeadLi
 export async function getOwnerHistory(ownerEmail: string, pageInput?: string | number): Promise<LeadListResult> {
   const supabase = createAdminClient()
   const page = normalizePage(pageInput)
-  const from = (page - 1) * PAGE_SIZE
-  const to = from + PAGE_SIZE - 1
-
-  const events = await fetchAllRows<{ lead_id: string; created_at: string }>((rangeFrom, rangeTo) =>
-    supabase
-      .from("lead_review_events")
-      .select("lead_id,created_at")
-      .eq("actor_role", "owner")
-      .eq("actor_identifier", ownerEmail)
-      .in("action", ["owner_approve", "reject"])
-      .order("created_at", { ascending: false })
-      .range(rangeFrom, rangeTo)
-  )
-
-  const orderedLeadIds: string[] = []
-  const seenLeadIds = new Set<string>()
-  for (const event of events) {
-    if (!event.lead_id || seenLeadIds.has(event.lead_id)) {
-      continue
-    }
-    seenLeadIds.add(event.lead_id)
-    orderedLeadIds.push(event.lead_id)
-  }
-
-  if (!orderedLeadIds.length) {
+  const window = await fetchHistoryLeadWindow("owner", ownerEmail, ["owner_approve", "reject"], page)
+  if (!window.orderedLeadIds.length) {
     return buildPaginatedResult([], 0, page)
   }
-
-  const pageLeadIds = orderedLeadIds.slice(from, to + 1)
   const { data, error } = await applyHasEmailFilters(
     supabase
       .from("leads")
       .select(LEAD_SELECT)
-      .in("id", pageLeadIds)
+      .in("id", window.orderedLeadIds)
   ).order("reviewed_at", { ascending: false })
 
   if (error) {
@@ -1224,12 +1303,22 @@ export async function getOwnerHistory(ownerEmail: string, pageInput?: string | n
   }
 
   const leadMap = new Map(castRows<LeadRow>(data).map((lead) => [lead.id, lead]))
-  const orderedLeads = pageLeadIds
+  const orderedLeads = window.orderedLeadIds
     .map((leadId) => leadMap.get(leadId))
     .filter((lead): lead is LeadRow => Boolean(lead))
   const snapshots = await fetchReviewSnapshots(orderedLeads.map((lead) => lead.id))
   const items = applyReviewSnapshots(orderedLeads, snapshots)
-  return buildPaginatedResult(items, orderedLeadIds.length, page)
+  return {
+    items,
+    total: window.total,
+    page,
+    pageSize: PAGE_SIZE,
+    totalPages: window.totalPages,
+    hasNext: window.hasNext,
+    hasPrevious: page > 1,
+    startIndex: window.startIndex,
+    endIndex: window.endIndex,
+  }
 }
 
 export async function listReadyForSmartleadRows(filters: ReadyFilters = {}): Promise<LeadRow[]> {
