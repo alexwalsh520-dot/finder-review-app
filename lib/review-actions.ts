@@ -45,6 +45,7 @@ type HasCoachingInput = boolean
 type ExportFiltersInput = {
   gender?: LeadGender | null
   coaching?: LeadCoachingFilter | null
+  exportStatus?: "previously_exported" | "all_unsent" | null
 }
 type ExportColumnKey =
   | "first_name"
@@ -447,6 +448,11 @@ function buildExportSegmentLabel(filters: ExportFiltersInput | null): string {
   } else if (filters.coaching === "none") {
     parts.push("no-coaching")
   }
+  if (filters.exportStatus === "previously_exported") {
+    parts.push("previously-exported")
+  } else if (filters.exportStatus === "all_unsent") {
+    parts.push("all-unsent")
+  }
   return parts.length ? `_${parts.join("_")}` : ""
 }
 
@@ -529,6 +535,7 @@ export async function exportApprovedLeads(selection: ExportSelectionInput, sessi
   const readyRows = await listReadyForSmartleadRows({
     gender: filters?.gender || undefined,
     coaching: filters?.coaching || undefined,
+    exportStatus: leadIds.length ? "all_unsent" : filters?.exportStatus || undefined,
   })
   const readyRowsById = new Map(readyRows.map((lead) => [lead.id, lead]))
   const selectedIds = leadIds.length ? leadIds : readyRows.map((lead) => lead.id)
@@ -539,9 +546,9 @@ export async function exportApprovedLeads(selection: ExportSelectionInput, sessi
   const supabase = createAdminClient()
   const { data, error } = await supabase
     .from("leads")
-    .select("id,first_name,full_name,email,instagram_handle,status,source,source_detail,review_status,sent_to_smartlead,smartlead_sent_at")
+    .select("id,first_name,full_name,email,instagram_handle,status,source,source_detail,review_status,exported_at,export_batch_id,sent_to_smartlead,smartlead_sent_at")
     .in("id", selectedIds)
-    .eq("review_status", "approved")
+    .in("review_status", ["approved", "exported_pending_confirmation"])
     .neq("sent_to_smartlead", true)
     .not("email", "is", null)
     .neq("email", "")
@@ -608,7 +615,7 @@ export async function exportApprovedLeads(selection: ExportSelectionInput, sessi
       export_batch_id: exportBatchId,
     })
     .in("id", ids)
-    .eq("review_status", "approved")
+    .in("review_status", ["approved", "exported_pending_confirmation"])
     .neq("sent_to_smartlead", true)
     .in("status", ["email_ready", "mgmt_email"])
     .select("id")
@@ -633,15 +640,19 @@ export async function exportApprovedLeads(selection: ExportSelectionInput, sessi
     })),
   )
   if (eventError) {
-    await supabase
-      .from("leads")
-      .update({
-        review_status: "approved",
-        exported_at: null,
-        export_batch_id: null,
-      })
-      .in("id", ids)
-      .eq("export_batch_id", exportBatchId)
+    await Promise.all(
+      eligibleRows.map((row) =>
+        supabase
+          .from("leads")
+          .update({
+            review_status: row.review_status,
+            exported_at: row.exported_at,
+            export_batch_id: row.export_batch_id,
+          })
+          .eq("id", row.id)
+          .eq("export_batch_id", exportBatchId),
+      ),
+    )
     throw new Error(eventError.message)
   }
 
