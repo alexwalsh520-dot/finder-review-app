@@ -11,6 +11,16 @@ type ReadyExportFilters = {
   coaching?: LeadCoachingFilter | null
 }
 
+type ExportColumnKey = "full_name" | "gender" | "coaching" | "email_type" | "source"
+
+const OPTIONAL_EXPORT_COLUMNS: Array<{ key: ExportColumnKey; label: string }> = [
+  { key: "full_name", label: "Full name" },
+  { key: "gender", label: "Gender" },
+  { key: "coaching", label: "Coaching" },
+  { key: "email_type", label: "Email type" },
+  { key: "source", label: "Source" },
+]
+
 function leadGenderLabel(lead: LeadRow): string {
   const gender = lead.review_snapshot?.gender || lead.gender
   if (gender === "male") {
@@ -32,6 +42,14 @@ function leadCoachingLabel(lead: LeadRow): string {
   return "—"
 }
 
+function selectedColumnLabels(columns: ExportColumnKey[]): string {
+  if (!columns.length) {
+    return "Default Smartlead fields"
+  }
+  const labels = OPTIONAL_EXPORT_COLUMNS.filter((column) => columns.includes(column.key)).map((column) => column.label.toLowerCase())
+  return `Default Smartlead fields plus ${labels.join(", ")}`
+}
+
 export function ReadyExportTable({
   leads,
   activeFilters,
@@ -43,11 +61,11 @@ export function ReadyExportTable({
 }) {
   const router = useRouter()
   const [selected, setSelected] = useState<string[]>(leads.map((lead) => lead.id))
+  const [columns, setColumns] = useState<ExportColumnKey[]>([])
   const [status, setStatus] = useState("")
   const [pending, setPending] = useState(false)
 
   const allSelected = selected.length === leads.length && leads.length > 0
-  const hasActiveSegment = Boolean(activeFilters.gender || activeFilters.coaching)
 
   useEffect(() => {
     setSelected(leads.map((lead) => lead.id))
@@ -55,6 +73,17 @@ export function ReadyExportTable({
 
   function toggle(id: string) {
     setSelected((current) => (current.includes(id) ? current.filter((value) => value !== id) : [...current, id]))
+  }
+
+  function toggleColumn(key: ExportColumnKey) {
+    setColumns((current) => (current.includes(key) ? current.filter((value) => value !== key) : [...current, key]))
+  }
+
+  function exportBody(body: Record<string, unknown>) {
+    return {
+      ...body,
+      columns,
+    }
   }
 
   async function runExport(body: Record<string, unknown>, successMessage: string) {
@@ -66,7 +95,7 @@ export function ReadyExportTable({
         headers: {
           "content-type": "application/json",
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(exportBody(body)),
       })
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}))
@@ -97,7 +126,7 @@ export function ReadyExportTable({
     await runExport({ leadIds: selected }, "Selected leads exported")
   }
 
-  async function exportMatchingSegment() {
+  async function exportAllMatching() {
     await runExport(
       {
         filters: {
@@ -105,14 +134,40 @@ export function ReadyExportTable({
           coaching: activeFilters.coaching || undefined,
         },
       },
-      "Matching segment exported",
+      "All matching leads exported",
     )
   }
 
   return (
     <div className="space-y-4">
-      <div className="panel-muted flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-        <div className="space-y-2">
+      <div className="panel-muted space-y-4 px-4 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-2">
+            <p className="section-label">CSV columns</p>
+            <p className="text-xs text-slateWarm">{selectedColumnLabels(columns)}</p>
+          </div>
+          <div className="flex max-w-[720px] flex-wrap gap-2">
+            {OPTIONAL_EXPORT_COLUMNS.map((column) => (
+              <label
+                key={column.key}
+                className={[
+                  "flex cursor-pointer items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold",
+                  columns.includes(column.key) ? "bg-[#c9a96e]/15 text-[#d4b87d]" : "bg-white/[0.04] text-slateWarm",
+                ].join(" ")}
+              >
+                <input
+                  type="checkbox"
+                  checked={columns.includes(column.key)}
+                  onChange={() => toggleColumn(column.key)}
+                  className="sr-only"
+                />
+                {column.label}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] pt-4">
           <label className="flex items-center gap-2 text-sm font-medium text-ink">
             <input
               type="checkbox"
@@ -121,25 +176,20 @@ export function ReadyExportTable({
             />
             Select all on this page
           </label>
-          {hasActiveSegment ? (
-            <p className="text-xs text-slateWarm">Segment export uses your current filters and includes all {matchingTotal} matching leads across every page.</p>
-          ) : null}
-        </div>
-        <div className="flex items-center gap-3">
-          <p className="text-sm text-slateWarm">{selected.length} selected</p>
-          {hasActiveSegment ? (
-            <button type="button" onClick={exportMatchingSegment} disabled={pending || matchingTotal === 0} className="ghost-button px-4 py-2 text-sm">
-              {pending ? "Exporting..." : `Export ${matchingTotal} matching`}
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-sm text-slateWarm">{selected.length} selected</p>
+            <button type="button" onClick={exportAllMatching} disabled={pending || matchingTotal === 0} className="gold-button px-4 py-2 text-sm">
+              {pending ? "Exporting..." : `Export all ${matchingTotal}`}
             </button>
-          ) : null}
-          <button
-            type="button"
-            onClick={exportSelected}
-            disabled={pending || selected.length === 0}
-            className="gold-button px-4 py-2 text-sm"
-          >
-            {pending ? "Exporting..." : "Export CSV"}
-          </button>
+            <button
+              type="button"
+              onClick={exportSelected}
+              disabled={pending || selected.length === 0}
+              className="ghost-button px-4 py-2 text-sm"
+            >
+              {pending ? "Exporting..." : "Export selected"}
+            </button>
+          </div>
         </div>
       </div>
       {status ? <p className="text-sm text-slateWarm">{status}</p> : null}

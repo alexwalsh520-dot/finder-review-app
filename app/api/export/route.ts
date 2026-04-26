@@ -12,7 +12,11 @@ export async function POST(request: Request) {
     }
     const body = await request.json()
     const result = await exportApprovedLeads(
-      body.filters ? { filters: body.filters, leadIds: body.leadIds || [] } : body.leadIds || [],
+      {
+        filters: body.filters || null,
+        leadIds: body.leadIds || [],
+        columns: body.columns || [],
+      },
       session,
     )
     return new NextResponse(result.csv, {

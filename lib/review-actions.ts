@@ -46,12 +46,22 @@ type ExportFiltersInput = {
   gender?: LeadGender | null
   coaching?: LeadCoachingFilter | null
 }
+type ExportColumnKey =
+  | "first_name"
+  | "email"
+  | "instagram_username"
+  | "full_name"
+  | "gender"
+  | "coaching"
+  | "email_type"
+  | "source"
 
 type ExportSelectionInput =
   | string[]
   | {
       leadIds?: string[]
       filters?: ExportFiltersInput | null
+      columns?: ExportColumnKey[] | null
     }
 
 function requireRole(session: SessionPayload, role: AppRole) {
@@ -440,21 +450,88 @@ function buildExportSegmentLabel(filters: ExportFiltersInput | null): string {
   return parts.length ? `_${parts.join("_")}` : ""
 }
 
+const REQUIRED_EXPORT_COLUMNS: ExportColumnKey[] = ["first_name", "email", "instagram_username"]
+const OPTIONAL_EXPORT_COLUMNS: ExportColumnKey[] = ["full_name", "gender", "coaching", "email_type", "source"]
+const EXPORT_COLUMN_ORDER: ExportColumnKey[] = [...REQUIRED_EXPORT_COLUMNS, ...OPTIONAL_EXPORT_COLUMNS]
+
+function normalizeExportColumns(columns: ExportColumnKey[] | null | undefined): ExportColumnKey[] {
+  const selected = new Set<ExportColumnKey>(REQUIRED_EXPORT_COLUMNS)
+  for (const column of columns || []) {
+    if (OPTIONAL_EXPORT_COLUMNS.includes(column)) {
+      selected.add(column)
+    }
+  }
+  return EXPORT_COLUMN_ORDER.filter((column) => selected.has(column))
+}
+
+function readExportGender(row: LeadRow): string {
+  return row.review_snapshot?.gender || row.gender || ""
+}
+
+function readExportCoaching(row: LeadRow): string {
+  if (row.review_snapshot?.has_coaching === true) {
+    return "has_coaching"
+  }
+  if (row.review_snapshot?.has_coaching === false) {
+    return "no_coaching"
+  }
+  return ""
+}
+
+function readExportEmailType(row: LeadRow): string {
+  if (row.review_snapshot?.email_type) {
+    return row.review_snapshot.email_type
+  }
+  if (row.status === "mgmt_email") {
+    return "management"
+  }
+  if (row.status === "email_ready") {
+    return "personal"
+  }
+  return ""
+}
+
+function readExportColumnValue(row: LeadRow, column: ExportColumnKey): string {
+  if (column === "first_name") {
+    return fallbackFirstName(row, "")
+  }
+  if (column === "email") {
+    return row.email || ""
+  }
+  if (column === "instagram_username") {
+    return (row.instagram_handle || "").replace(/^@/, "")
+  }
+  if (column === "full_name") {
+    return row.full_name || ""
+  }
+  if (column === "gender") {
+    return readExportGender(row)
+  }
+  if (column === "coaching") {
+    return readExportCoaching(row)
+  }
+  if (column === "email_type") {
+    return readExportEmailType(row)
+  }
+  return row.source_detail || row.source || ""
+}
+
 export async function exportApprovedLeads(selection: ExportSelectionInput, session: SessionPayload) {
   requireRole(session, "owner")
   const leadIds = Array.isArray(selection) ? selection : selection.leadIds || []
   const filters = Array.isArray(selection) ? null : selection.filters || null
+  const columns = normalizeExportColumns(Array.isArray(selection) ? null : selection.columns)
 
   if (!leadIds.length && !filters) {
     throw new Error("Choose at least one lead to export.")
   }
 
-  const selectedIds = leadIds.length
-    ? leadIds
-    : (await listReadyForSmartleadRows({
-        gender: filters?.gender || undefined,
-        coaching: filters?.coaching || undefined,
-      })).map((lead) => lead.id)
+  const readyRows = await listReadyForSmartleadRows({
+    gender: filters?.gender || undefined,
+    coaching: filters?.coaching || undefined,
+  })
+  const readyRowsById = new Map(readyRows.map((lead) => [lead.id, lead]))
+  const selectedIds = leadIds.length ? leadIds : readyRows.map((lead) => lead.id)
 
   if (!selectedIds.length) {
     throw new Error("There are no approved unsent leads in this segment.")
@@ -462,7 +539,7 @@ export async function exportApprovedLeads(selection: ExportSelectionInput, sessi
   const supabase = createAdminClient()
   const { data, error } = await supabase
     .from("leads")
-    .select("id,first_name,full_name,email,instagram_handle,review_status,sent_to_smartlead,smartlead_sent_at")
+    .select("id,first_name,full_name,email,instagram_handle,status,source,source_detail,review_status,sent_to_smartlead,smartlead_sent_at")
     .in("id", selectedIds)
     .eq("review_status", "approved")
     .neq("sent_to_smartlead", true)
@@ -501,7 +578,21 @@ export async function exportApprovedLeads(selection: ExportSelectionInput, sessi
       resolvedLeadIds.add(event.lead_id)
     }
   }
-  const eligibleRows = rows.filter((row) => !blockedLeadIds.has(row.id))
+  const rowById = new Map(rows.map((row) => [row.id, row]))
+  const orderedRows = selectedIds
+    .map((id) => {
+      const row = rowById.get(id)
+      const readyRow = readyRowsById.get(id)
+      return row && readyRow
+        ? ({
+            ...row,
+            review_snapshot: readyRow.review_snapshot || null,
+            gender: readyRow.gender || row.gender || null,
+          } as LeadRow)
+        : null
+    })
+    .filter((row): row is LeadRow => Boolean(row))
+  const eligibleRows = orderedRows.filter((row) => !blockedLeadIds.has(row.id))
   if (!eligibleRows.length) {
     throw new Error("There are no qualified unsent leads in this selection.")
   }
@@ -554,16 +645,10 @@ export async function exportApprovedLeads(selection: ExportSelectionInput, sessi
     throw new Error(eventError.message)
   }
 
-  const header = ["first_name", "email", "instagram_username"]
+  const header = columns
   const lines = [
     header.join(","),
-    ...eligibleRows.map((row) =>
-      [
-        escapeCsv(fallbackFirstName(row, "")),
-        escapeCsv(row.email || ""),
-        escapeCsv((row.instagram_handle || "").replace(/^@/, "")),
-      ].join(","),
-    ),
+    ...eligibleRows.map((row) => columns.map((column) => escapeCsv(readExportColumnValue(row, column))).join(",")),
   ]
   return {
     batchId: exportBatchId,
