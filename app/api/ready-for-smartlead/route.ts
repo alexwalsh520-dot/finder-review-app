@@ -13,6 +13,7 @@ export async function GET(request: Request) {
         page: searchParams.get("page") || "1",
         gender: searchParams.get("gender") || undefined,
         coaching: searchParams.get("coaching") || undefined,
+        exportStatus: searchParams.get("exportStatus") || undefined,
       }),
     )
   } catch (error) {

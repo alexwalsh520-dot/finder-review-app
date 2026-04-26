@@ -82,6 +82,7 @@ export type ReadyFilters = {
   page?: string | number
   gender?: string
   coaching?: string
+  exportStatus?: string
 }
 
 function castRows<T>(rows: unknown): T[] {
@@ -225,6 +226,13 @@ function normalizeReadyCoachingFilter(value: string | null | undefined): LeadCoa
   return value === "has" || value === "none" ? value : null
 }
 
+function normalizeReadyExportStatusFilter(value: string | null | undefined): "ready" | "previously_exported" | "all_unsent" {
+  if (value === "previously_exported" || value === "all_unsent") {
+    return value
+  }
+  return "ready"
+}
+
 function readLeadGender(lead: LeadRow): LeadGender | null {
   return lead.gender || lead.review_snapshot?.gender || null
 }
@@ -254,7 +262,7 @@ function matchesReadyFilters(
 }
 
 function isEligibleForSmartlead(lead: LeadRow): boolean {
-  if (lead.review_status !== "approved") {
+  if (lead.review_status !== "approved" && lead.review_status !== "exported_pending_confirmation") {
     return false
   }
   if (lead.review_snapshot?.owner_decision === "disqualified") {
@@ -1324,18 +1332,26 @@ export async function getOwnerHistory(ownerEmail: string, pageInput?: string | n
 export async function listReadyForSmartleadRows(filters: ReadyFilters = {}): Promise<LeadRow[]> {
   await maybeFreshenPendingSmartlead(15)
   const supabase = createAdminClient()
-  const rows = await fetchAllRows<LeadRow>((rangeFrom, rangeTo) =>
-    applyHasEmailFilters(
+  const exportStatus = normalizeReadyExportStatusFilter(filters.exportStatus)
+  const rows = await fetchAllRows<LeadRow>((rangeFrom, rangeTo) => {
+    let query = applyHasEmailFilters(
       supabase
         .from("leads")
         .select(LEAD_SELECT)
-        .eq("review_status", "approved")
         .neq("sent_to_smartlead", true)
     )
+    if (exportStatus === "previously_exported") {
+      query = query.eq("review_status", "exported_pending_confirmation")
+    } else if (exportStatus === "all_unsent") {
+      query = query.in("review_status", ["approved", "exported_pending_confirmation"])
+    } else {
+      query = query.eq("review_status", "approved")
+    }
+    return query
       .in("status", ["email_ready", "mgmt_email"])
       .order("reviewed_at", { ascending: false })
       .range(rangeFrom, rangeTo)
-  )
+  })
   const deduped = dedupeLeadRowsByEmail(rows)
   const snapshots = await fetchReviewSnapshots(deduped.map((lead) => lead.id))
   const items = applyReviewSnapshots(deduped, snapshots)

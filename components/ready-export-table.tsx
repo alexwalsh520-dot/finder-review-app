@@ -9,6 +9,7 @@ import type { LeadCoachingFilter, LeadGender, LeadRow } from "@/lib/types"
 type ReadyExportFilters = {
   gender?: LeadGender | null
   coaching?: LeadCoachingFilter | null
+  exportStatus?: "previously_exported" | "all_unsent" | null
 }
 
 type ExportColumnKey = "full_name" | "gender" | "coaching" | "email_type" | "source"
@@ -40,6 +41,13 @@ function leadCoachingLabel(lead: LeadRow): string {
     return "No coaching"
   }
   return "—"
+}
+
+function leadExportStatusLabel(lead: LeadRow): string {
+  if (lead.review_status === "exported_pending_confirmation") {
+    return "Previously exported"
+  }
+  return "Ready"
 }
 
 function selectedColumnLabels(columns: ExportColumnKey[]): string {
@@ -132,6 +140,7 @@ export function ReadyExportTable({
         filters: {
           gender: activeFilters.gender || undefined,
           coaching: activeFilters.coaching || undefined,
+          exportStatus: activeFilters.exportStatus || undefined,
         },
       },
       "All matching leads exported",
@@ -203,6 +212,7 @@ export function ReadyExportTable({
               <th className="px-4 py-3">Email</th>
               <th className="px-4 py-3">Gender</th>
               <th className="px-4 py-3">Coaching</th>
+              <th className="px-4 py-3">Export status</th>
               <th className="px-4 py-3">Source</th>
             </tr>
           </thead>
@@ -224,6 +234,7 @@ export function ReadyExportTable({
                 <td className="px-4 py-4">{lead.email}</td>
                 <td className="px-4 py-4 text-slateWarm">{leadGenderLabel(lead)}</td>
                 <td className="px-4 py-4 text-slateWarm">{leadCoachingLabel(lead)}</td>
+                <td className="px-4 py-4 text-slateWarm">{leadExportStatusLabel(lead)}</td>
                 <td className="px-4 py-4 text-slateWarm">{lead.source_detail || lead.source || "—"}</td>
               </tr>
             ))}
