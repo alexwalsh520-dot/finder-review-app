@@ -11,6 +11,26 @@ type SearchParams = {
   coaching?: string
 }
 
+const SEGMENT_PRESETS = [
+  { label: "All", gender: "", coaching: "" },
+  { label: "Male + Has coaching", gender: "male", coaching: "has" },
+  { label: "Male + No coaching", gender: "male", coaching: "none" },
+  { label: "Female + Has coaching", gender: "female", coaching: "has" },
+  { label: "Female + No coaching", gender: "female", coaching: "none" },
+]
+
+function readyHref(gender: string, coaching: string) {
+  const params = new URLSearchParams()
+  if (gender) {
+    params.set("gender", gender)
+  }
+  if (coaching) {
+    params.set("coaching", coaching)
+  }
+  const query = params.toString()
+  return query ? `/ready?${query}` : "/ready"
+}
+
 export default async function ReadyPage({ searchParams }: { searchParams?: SearchParams }) {
   await requireSession(["owner"])
   const activeGender = searchParams?.gender === "male" || searchParams?.gender === "female" ? searchParams.gender : ""
@@ -34,6 +54,24 @@ export default async function ReadyPage({ searchParams }: { searchParams?: Searc
       </div>
 
       <div className="panel-muted px-4 py-4">
+        <div className="mb-4 flex flex-wrap gap-2">
+          {SEGMENT_PRESETS.map((preset) => {
+            const active = preset.gender === activeGender && preset.coaching === activeCoaching
+            return (
+              <Link
+                key={preset.label}
+                href={readyHref(preset.gender, preset.coaching)}
+                className={[
+                  "rounded-full px-3 py-2 text-xs font-semibold",
+                  active ? "bg-[#c9a96e]/15 text-[#d4b87d]" : "bg-white/[0.04] text-slateWarm hover:text-ink",
+                ].join(" ")}
+              >
+                {preset.label}
+              </Link>
+            )
+          })}
+        </div>
+
         <form action="/ready" className="flex flex-wrap items-end gap-3">
           <div className="min-w-[180px]">
             <label htmlFor="ready-gender" className="block text-xs font-semibold uppercase tracking-[0.18em] text-slateWarm">
@@ -65,7 +103,7 @@ export default async function ReadyPage({ searchParams }: { searchParams?: Searc
           </Link>
         </form>
         <p className="mt-3 text-xs text-slateWarm">
-          Filter by gender, coaching, or both. Then use the matching export button below to download the full segment across all pages.
+          The export button below downloads every matching lead across all pages.
         </p>
       </div>
 
