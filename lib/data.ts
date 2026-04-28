@@ -69,6 +69,8 @@ const TOP_UP_EVENT_NAMES = new Set([
   "daily_run_failed",
 ])
 const REVIEW_DECISION_ACTIONS = new Set(["qualified", "not_qualified", "va_approve", "flag"])
+const WORKER_EVENT_LIST_SELECT = "id,agent,event,status,created_at"
+const WORKER_EVENT_STATUS_SELECT = "id,agent,event,status,data,created_at"
 
 export type ReviewFilters = {
   q?: string
@@ -760,8 +762,23 @@ async function getWorkerEvents(limit = 20): Promise<WorkerEvent[]> {
   const supabase = createAdminClient()
   const { data, error } = await supabase
     .from("agent_events")
-    .select("id,agent,event,status,data,created_at")
+    .select(WORKER_EVENT_LIST_SELECT)
     .eq("agent", "finder_v1_worker")
+    .order("created_at", { ascending: false })
+    .limit(limit)
+  if (error) {
+    throw new Error(error.message)
+  }
+  return castRows<WorkerEvent>(data)
+}
+
+async function getTopUpWorkerEvents(limit = 16): Promise<WorkerEvent[]> {
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from("agent_events")
+    .select(WORKER_EVENT_STATUS_SELECT)
+    .eq("agent", "finder_v1_worker")
+    .in("event", Array.from(TOP_UP_EVENT_NAMES))
     .order("created_at", { ascending: false })
     .limit(limit)
   if (error) {
@@ -934,7 +951,7 @@ async function getTopUpStatus(jobs?: CronJobRow[], events?: WorkerEvent[]): Prom
     countTodayAutoSentLeads(day),
     getTopUpRequestRecord(),
     jobs ? Promise.resolve(jobs) : getWorkerJobs(),
-    events ? Promise.resolve(events) : getWorkerEvents(16),
+    events ? Promise.resolve(events) : getTopUpWorkerEvents(16),
   ])
   const requestValue = topUpRecord?.value || {}
   const requestedDay = typeof requestValue.day === "string" ? requestValue.day : day
