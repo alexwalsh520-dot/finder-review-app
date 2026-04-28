@@ -127,7 +127,7 @@ export type WorkerEvent = {
   agent: string
   event: string
   status: string
-  data: Record<string, unknown> | null
+  data?: Record<string, unknown> | null
   created_at: string
 }
 
